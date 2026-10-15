@@ -10,6 +10,10 @@ use axum::routing::{any, get};
 use axum::Router;
 use std::collections::HashSet;
 use std::net::{IpAddr, SocketAddr};
+use std::sync::atomic::{AtomicBool, Ordering};
+
+/// The proxy-depth warning is printed once per process.
+static PROXY_WARNED: AtomicBool = AtomicBool::new(false);
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 use visits_core::{decorate, validate_json, validate_query, Invalid, RequestFacts};
@@ -88,6 +92,9 @@ async fn beacon(
     let Some(origin) = origin_of(&headers, &state.origins) else { return refuse(StatusCode::FORBIDDEN, "origin not allowed") };
     let h = |name: &str| headers.get(name).and_then(|v| v.to_str().ok());
     let ip = client_ip(h("x-forwarded-for"), peer.ip(), state.trusted_proxies);
+    if ip.is_none() && state.trusted_proxies > 0 && !PROXY_WARNED.swap(true, Ordering::Relaxed) {
+        eprintln!("visits: X-Forwarded-For has fewer entries than --trusted-proxies; every visitor is sharing one bucket and no visit is computed. Check the proxy depth with --log-ip.");
+    }
     if state.log_ip { eprintln!("visits: request from {}", ip.map(|i| i.to_string()).unwrap_or_else(|| "unknown".into())); }
     let key = ip.map(|i| i.to_string()).unwrap_or_else(|| "unknown".into());
     if !state.limiter.lock().map(|mut l| l.allow(&key)).unwrap_or(true) {
