@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { statSync } from "node:fs";
 
-const BUDGET = { visits: 2560, vitals: 1024 };
+const BUDGET = { visits: 3072, vitals: 1024 };
 
 for (const [name, max] of Object.entries(BUDGET)) {
   test(`${name}.min.js is within its ${max} byte budget`, () => {

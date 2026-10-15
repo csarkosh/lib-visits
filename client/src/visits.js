@@ -40,6 +40,18 @@
       b: (n.webdriver ? 1 : w.callPhantom || w._phantom ? 2 : w.__nightmare ? 3 : d.__selenium_unwrapped || d.__webdriver_evaluate ? 4 : 0) || undefined
     }, cp));
   } catch (e) {} };
+  var vis = d.visibilityState == 'visible', t0 = Date.now(), eng = 0, sd = 0, re, lastJ = '';
+  var depth = () => { sd = Math.max(sd, Math.min(100, Math.round((scrollY + innerHeight) / d.documentElement.scrollHeight * 100))) };
+  addEventListener('scroll', depth, { passive: true }); depth();
+  var end = d.querySelector('[data-read-end]');
+  if (end && w.IntersectionObserver) new IntersectionObserver((es, o) => { if (es.some(x => x.isIntersecting)) { re = true; o.disconnect() } }).observe(end);
+  var leave = () => {
+    if (vis) { eng += Date.now() - t0; vis = false }
+    var data = { e: Math.round(eng / 1000), sd: sd, re: re }, j = JSON.stringify(data);
+    if (j != lastJ) { lastJ = j; send('leave', data) }
+  };
+  d.addEventListener('visibilitychange', () => { if (d.visibilityState == 'hidden') leave(); else if (!vis) { vis = true; t0 = Date.now() } });
+  addEventListener('pagehide', leave);
   var once = () => { if (d.visibilityState == 'visible') { d.removeEventListener('visibilitychange', once); view() } };
   d.visibilityState == 'visible' ? view() : d.addEventListener('visibilitychange', once);
 })();
