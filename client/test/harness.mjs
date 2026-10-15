@@ -26,6 +26,7 @@ export function load(options = {}) {
     storage = {},                // the fake localStorage's contents
     webdriver = false,
     scripts = ["visits"],
+    framed = false,
   } = options;
 
   const sent = [];
@@ -63,7 +64,7 @@ export function load(options = {}) {
     removeEventListener: (t, f) => win.removeEventListener(t, f),
   };
   ctx.window = ctx;
-  ctx.parent = ctx;
+  ctx.parent = framed ? {} : ctx;
   ctx.self = ctx;
   vm.createContext(ctx);
   for (const s of scripts) vm.runInContext(SRC(s), ctx, { filename: `${s}.js` });
