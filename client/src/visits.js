@@ -62,7 +62,7 @@
     else if (el.host && el.host != l.host) send('click', { u: el.origin + el.pathname });
   };
   addEventListener('click', click, true); addEventListener('auxclick', click, true);
-  w.visits = { send: (name, data) => { if (/^[a-z][a-z0-9_-]{0,31}$/.test(name)) send(name, { d: data }) }, id: id };
+  w.visits = { send: (name, data) => { if (typeof name == 'string' && /^[a-z][a-z0-9_-]{0,31}$/.test(name)) send(name, { d: data }) }, id: id };
   var once = () => { if (d.visibilityState == 'visible') { d.removeEventListener('visibilitychange', once); view() } };
   d.visibilityState == 'visible' ? view() : d.addEventListener('visibilitychange', once);
 })();

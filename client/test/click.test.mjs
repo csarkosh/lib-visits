@@ -28,6 +28,9 @@ test("visits.send wraps the payload as d and refuses a bad name", () => {
   const before = sent.length;
   ctx.visits.send("Bad Name", {});
   assert.equal(sent.length, before);
+  ctx.visits.send(); assert.equal(sent.length, before);
+  ctx.visits.send(null, {}); assert.equal(sent.length, before);
+  ctx.visits.send(42, {}); assert.equal(sent.length, before);
 });
 
 test("in get mode the event is query parameters on one fetch, d JSON-encoded", () => {
@@ -38,4 +41,12 @@ test("in get mode the event is query parameters on one fetch, d JSON-encoded", (
   assert.equal(u.searchParams.get("sw"), "1512");
   ctx.visits.send("vitals", { lcp: 1 });
   assert.equal(new URL(sent.at(-1).url).searchParams.get("d"), '{"lcp":1}');
+});
+
+test("a click with no target, or a target without closest, throws nothing and sends nothing", () => {
+  const { sent, fire } = load();
+  const before = sent.length;
+  fire("window", "click", { target: {} });
+  fire("window", "click", {});
+  assert.equal(sent.length, before);
 });
