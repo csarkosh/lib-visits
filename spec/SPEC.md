@@ -15,6 +15,8 @@ not allowed, `413` too large or more than 50 events, `429` rate limited, `405`
 other methods. Every answer carries `cache-control: no-store`. The body of an
 error is `{"error": "<reason>"}`.
 
+The limiter is a courtesy filter, not a boundary: the route is public. The client address is only as trustworthy as `--trusted-proxies` is accurate (a value higher than the real proxy count lets a client choose its own address), and when the limiter's table is full of fresh addresses, newcomers are served untracked rather than real visitors refused. A host under a flood answers it at its reverse proxy or CDN.
+
 ## 2. Events
 
 Every event: `v` (integer, `1`), `n` (name), `id` (1 to 32 chars, the page load's

@@ -17,6 +17,9 @@ async fn serve(args: Serve) -> anyhow::Result<()> {
     let secret = std::env::var(&args.secret_env).ok().filter(|s| !s.is_empty()).map(String::into_bytes);
     if secret.is_none() { eprintln!("visits: {} is not set, so events carry no visit", args.secret_env); }
     if args.log_ip { eprintln!("visits: --log-ip is on; this prints addresses to stderr and is for setup only"); }
+    if !args.path.starts_with('/') || args.path == "/healthcheck" {
+        anyhow::bail!("--path must start with / and not be /healthcheck, got {}", args.path);
+    }
     let (burst, per_second) = args.limit_parts()?;
     let geoip = load_geoip(args.geoip.as_deref())?;
     let state = Arc::new(AppState {
@@ -32,7 +35,7 @@ async fn serve(args: Serve) -> anyhow::Result<()> {
     let listener = tokio::net::TcpListener::bind(&args.listen).await?;
     eprintln!("visits: listening on {} for {} from {}", args.listen, args.path, args.origin.join(", "));
     axum::serve(listener, router(state).into_make_service_with_connect_info::<std::net::SocketAddr>())
-        .with_graceful_shutdown(async { let _ = tokio::signal::ctrl_c().await; })
+        .with_graceful_shutdown(shutdown())
         .await?;
     Ok(())
 }
@@ -46,4 +49,21 @@ fn load_geoip(path: Option<&std::path::Path>) -> anyhow::Result<Option<visits::a
 fn load_geoip(path: Option<&std::path::Path>) -> anyhow::Result<Option<visits::app::GeoIp>> {
     if path.is_some() { anyhow::bail!("--geoip needs a build with the geoip feature: cargo build --release --features geoip"); }
     Ok(None)
+}
+
+/// Resolves on ctrl-c, or on SIGTERM where there is one (containers, systemd).
+async fn shutdown() {
+    #[cfg(unix)]
+    {
+        use tokio::signal::unix::{signal, SignalKind};
+        match signal(SignalKind::terminate()) {
+            Ok(mut term) => tokio::select! {
+                _ = tokio::signal::ctrl_c() => {}
+                _ = term.recv() => {}
+            },
+            Err(_) => { let _ = tokio::signal::ctrl_c().await; }
+        }
+    }
+    #[cfg(not(unix))]
+    { let _ = tokio::signal::ctrl_c().await; }
 }

@@ -39,6 +39,13 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route(&path, any(beacon))
         .layer(DefaultBodyLimit::max(MAX_BODY))
         .with_state(state)
+        .layer(axum::middleware::map_response(no_store))
+}
+
+/// Every answer, the framework's own included, is `no-store`.
+async fn no_store(mut res: Response) -> Response {
+    res.headers_mut().entry(header::CACHE_CONTROL).or_insert(HeaderValue::from_static("no-store"));
+    res
 }
 
 /// The client address: the peer at 0 proxies, else that many entries from the

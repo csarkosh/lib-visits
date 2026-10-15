@@ -41,13 +41,17 @@ impl Sink for SharedSink {
 
 fn request(addr: &str, method: &str, target: &str, headers: &[(&str, &str)], body: &str) -> (u16, String, String) {
     let mut s = TcpStream::connect(addr).unwrap();
+    s.set_read_timeout(Some(std::time::Duration::from_secs(5))).unwrap();
     let mut req = format!("{method} {target} HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\nContent-Length: {}\r\n", body.len());
     for (k, v) in headers { req.push_str(&format!("{k}: {v}\r\n")); }
     req.push_str("\r\n");
     req.push_str(body);
-    s.write_all(req.as_bytes()).unwrap();
+    let _ = s.write_all(req.as_bytes());
     let mut out = String::new();
-    s.read_to_string(&mut out).unwrap();
+    if let Err(e) = s.read_to_string(&mut out) {
+        assert!(!out.is_empty(), "no response ({e})");
+    }
+    assert!(!out.is_empty(), "no response");
     let status: u16 = out[9..12].parse().unwrap();
     let (head, body) = out.split_once("\r\n\r\n").unwrap();
     (status, head.to_lowercase(), body.to_string())
@@ -91,18 +95,23 @@ async fn refusals_carry_the_spec_statuses() {
     assert_eq!((status, body.as_str()), (400, r#"{"error":"malformed json"}"#));
     assert_eq!(request(&srv.addr, "PUT", "/v", &[origin], VIEW).0, 405);
     let big = format!(r#"{{"v":1,"n":"view","id":"abc","p":"/","t":"{}"}}"#, "x".repeat(17_000));
-    assert_eq!(request(&srv.addr, "POST", "/v", &[origin], &big).0, 413);
+    let (status, head, _) = request(&srv.addr, "POST", "/v", &[origin], &big);
+    assert_eq!(status, 413);
+    assert!(head.contains("cache-control: no-store"), "oversize 413: {head}");
     let fifty_one = format!("[{}]", vec![VIEW; 51].join(","));
     assert_eq!(request(&srv.addr, "POST", "/v", &[origin], &fifty_one).0, 413);
     let (status, head, _) = request(&srv.addr, "GET", "/healthcheck", &[], "");
     assert_eq!(status, 200);
     assert!(head.contains("content-type: text/plain"));
-    assert_eq!(request(&srv.addr, "GET", "/nope", &[], "").0, 404);
+    assert!(head.contains("cache-control: no-store"), "healthcheck: {head}");
+    let (status, head, _) = request(&srv.addr, "GET", "/nope", &[], "");
+    assert_eq!(status, 404);
+    assert!(head.contains("cache-control: no-store"), "404: {head}");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_limiter_answers_429_after_the_burst_and_keys_unknown_addresses_together() {
-    let srv = start(None, 1).await;
+    let srv = start(Some("s"), 1).await;
     let h = [("Origin", "https://example.com"), ("X-Forwarded-For", "  , garbage")];
     for _ in 0..3 { assert_eq!(request(&srv.addr, "POST", "/v", &h, VIEW).0, 204); }
     let (status, head, _) = request(&srv.addr, "POST", "/v", &h, VIEW);
