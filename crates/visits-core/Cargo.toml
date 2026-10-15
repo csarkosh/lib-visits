@@ -1,0 +1,13 @@
+[package]
+name = "visits-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "The pure half of lib-visits: validate, decorate and hash events."
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+serde_urlencoded.workspace = true
+hmac.workspace = true
+sha2.workspace = true
