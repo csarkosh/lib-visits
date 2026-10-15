@@ -90,7 +90,7 @@ is never counted.
 |---|---|
 | `p` | the path: `location.pathname`, or the `<link rel=canonical>` path when its host is this host (`www.` ignored); never the query string |
 | `t` | `document.title`, at most 200 characters |
-| `r` | `document.referrer` as the browser gives it, at most 2 KB; the server classifies it |
+| `r` | `document.referrer` without its query or fragment (a same-site referrer carries the previous page's query, which may hold a token), at most 2 KB; the server classifies it |
 | `us` `um` `uc` `ut` `uo` `cr` | the campaign parameters `utm_source`, `utm_medium`, `utm_campaign`, `utm_term`, `utm_content`, `ref`, each only when present, each at most 100 characters. The rest of the query string is never sent, so a token in a URL never lands in a log |
 | `nt` | navigation type from `PerformanceNavigationTiming`: `navigate`, `reload`, `back_forward`, `prerender` |
 | `sw` `sh` | `screen.width`, `screen.height` |
