@@ -1,5 +1,12 @@
 # lib-visits
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/journeys-dark.png">
+  <img alt="A dashboard built on lib-visits: where visits came from, the pages they read with median engaged time and the share read to the end, and where they went next" src="docs/images/journeys-light.png" width="720">
+</picture>
+
+<sub>The csarko.sh dashboard, built on these JSON lines in BigQuery (sample data).</sub>
+
 Visits and journeys for your site. No cookies, no storage unless you opt out, no fingerprinting.
 One script of **3,068 bytes** minified on the page and a **1.1 MB** static binary on the
 server, which as a `FROM scratch` image is 0.6 MB compressed, idling at **2.6 MiB** of
@@ -15,42 +22,32 @@ memory, that writes what it sees as JSON lines.
 
 ## Setup
 
-1. Build and run it
+1. **[Download `visits`](https://github.com/csarkosh/lib-visits/releases/latest)** for Linux (x86-64 or ARM64, static) or macOS (Apple silicon); `visits.min.js` is beside it.
+2. Run it: `VISITS_SECRET=$(openssl rand -hex 32) ./visits serve --origin https://example.com`
+3. Add the tag: `<script src="/visits.min.js" data-visits="https://stats.example.com/v"></script>`
 
-       cargo build --release -p visits
-       VISITS_SECRET=$(openssl rand -hex 32) ./target/release/visits serve --origin https://example.com
+<sub>Or build it: `cargo build --release -p visits`, or the Dockerfile for the same binary in an empty image.</sub>
 
-   Or build the Dockerfile, which gives the same binary in an empty image.
+Each event is one JSON line on stdout. Pages on localhost or file: are not counted unless the
+tag also carries `data-visits-local`.
 
-2. Serve the script and add the tag. Copy `client/dist/visits.min.js` to your site and load it:
+### Behind your site
 
-       <script src="/visits.min.js" data-visits="https://stats.example.com/v"></script>
-
-3. Watch the lines
-
-       {"v":1,"n":"view","id":"k3j9x2m1ab","p":"/","t":"Home", ... ,"s":{"at":"2026-10-15T02:40:30Z","visit":"3f9a1c0e5b7d2a46","bn":"Firefox","bv":128,"os":"macOS","rk":"external","rh":"google.com", ...}}
-
-   Pages on localhost or file: are not counted unless the tag also carries
-   `data-visits-local`, so try it on the real origin, or add that attribute while you test.
-
-### Put it behind your site
-
-So the beacon is same-origin (no CORS, fewer blockers), proxy the path:
+Proxy the path so the beacon is same-origin (no CORS, fewer blockers), use `data-visits="/v"`,
+and tell the collector how many proxies sit in front: `--trusted-proxies 1` behind this nginx
+block. Too low and every visitor shares the proxy's address, too high and none has a visit; confirm it once with `--log-ip`.
 
     location = /v {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_pass http://127.0.0.1:8080;
     }
 
-Use `data-visits="/v"` and run `visits serve --trusted-proxies 1`: behind any proxy the depth must be set, and a depth wrong in either direction puts every visitor in one rate-limit bucket and ends visits; confirm it once with `--log-ip`.
-
 ## Running it in the cloud
 
-The shape is the same everywhere: the site's host rewrites the beacon path to the
-collector, the collector writes to stdout, the cloud's log service keeps the lines,
-and a query layer reads them.
+The site's host rewrites `/v` to the collector, the collector writes to stdout, the cloud keeps
+the lines. The address stops at the collector; the logs hold only the JSON lines.
 
-### GCP
+**GCP**: scales to zero. Behind a Firebase Hosting rewrite the depth is 2 (Hosting and Cloud Run's frontend).
 
 ```mermaid
 flowchart LR
@@ -61,9 +58,7 @@ flowchart LR
   A --> Q[BigQuery linked dataset]
 ```
 
-Idle: nothing, Cloud Run scales to zero. The address reaches the collector and stops there; Cloud Logging holds only the JSON lines. Behind a Hosting rewrite, `--trusted-proxies` must be set; confirm the depth once with `--log-ip`.
-
-### AWS
+**AWS**: not zero at idle; the smallest Fargate task is a few dollars a month, App Runner paused bills memory only.
 
 ```mermaid
 flowchart LR
@@ -74,9 +69,7 @@ flowchart LR
   W -.->|subscription| S[S3 + Athena]
 ```
 
-Idle: not zero. The smallest Fargate task is a few dollars a month; App Runner paused bills memory only. The address stops at the collector; CloudWatch holds only the lines.
-
-### Azure
+**Azure**: scales to zero on the Container Apps consumption plan.
 
 ```mermaid
 flowchart LR
@@ -86,11 +79,7 @@ flowchart LR
   M --> W[Log Analytics workspace, KQL]
 ```
 
-Idle: nothing on the Container Apps consumption plan, which scales to zero. The address stops at the collector; Log Analytics holds only the lines.
-
-### Your own box
-
-nginx or Caddy in front, `--sink file:/var/log/visits.jsonl`, logrotate: rotate it with logrotate's `copytruncate` (the file is opened once, in append mode).
+**Your own box**: nginx or Caddy in front, `--sink file:/var/log/visits.jsonl`, and logrotate with `copytruncate` (the file is opened once, in append mode).
 
 ## More
 
