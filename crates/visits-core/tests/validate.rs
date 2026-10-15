@@ -8,7 +8,7 @@ fn fixture(name: &str) -> Value {
 
 #[test]
 fn every_valid_fixture_parses_and_keeps_only_known_keys() {
-    for name in ["view", "leave", "click-named", "click-outbound", "vitals"] {
+    for name in ["view", "view-internal", "leave", "click-named", "click-outbound", "vitals"] {
         let f = fixture(name);
         let events = validate_json(f["in"].to_string().as_bytes()).unwrap_or_else(|e| panic!("{name}: {e}"));
         assert_eq!(events.len(), 1, "{name}");

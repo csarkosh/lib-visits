@@ -134,3 +134,40 @@ fn client_ip_counts_from_the_right() {
     assert_eq!(client_ip(Some("  , garbage"), peer, 1), None);
     assert_eq!(client_ip(None, peer, 1), None);
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn every_fixture_is_accepted_and_decorated() {
+    use serde_json::Value;
+    let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../spec/fixtures/");
+    for name in ["view", "view-internal", "leave", "click-named", "click-outbound", "vitals"] {
+        let f: Value = serde_json::from_str(&std::fs::read_to_string(format!("{dir}{name}.json")).unwrap()).unwrap();
+        let facts = &f["facts"];
+        let s = |k: &str| facts.get(k).and_then(Value::as_str);
+        let srv = start(Some("test-secret"), 1).await;
+        // One trusted proxy: the client is the last X-Forwarded-For entry, the one the proxy appended.
+        let xff = s("ip").unwrap().to_string();
+        let mut headers = vec![("Origin", "https://example.com"), ("User-Agent", s("user_agent").unwrap()), ("X-Forwarded-For", xff.as_str())];
+        if let Some(v) = s("accept_language") { headers.push(("Accept-Language", v)); }
+        if let Some(v) = s("sec_ch_ua") { headers.push(("Sec-CH-UA", v)); }
+        if let Some(v) = s("sec_ch_ua_platform") { headers.push(("Sec-CH-UA-Platform", v)); }
+        let (status, _, _) = request(&srv.addr, "POST", "/v", &headers, &f["in"].to_string());
+        assert_eq!(status, 204, "{name}");
+        let got = srv.captured.0.lock().unwrap();
+        assert_eq!(got.len(), 1, "{name}");
+        let mut line = serde_json::to_value(&got[0]).unwrap();
+        let mut want = f["out"].clone();
+        let (ls, ws) = (line["s"].as_object_mut().unwrap(), want["s"].as_object_mut().unwrap());
+        ls.insert("at".into(), ws["at"].clone());
+        match ws.remove("visit") {
+            Some(_) => {
+                let v = ls.get("visit").and_then(Value::as_str).unwrap_or_else(|| panic!("{name}: visit"));
+                assert!(v.len() == 16 && v.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)), "{name}: {v}");
+            }
+            None => {}
+        }
+        ls.remove("visit");
+        ls.remove("cc");
+        ws.remove("cc");
+        assert_eq!(line, want, "{name}");
+    }
+}

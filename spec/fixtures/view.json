@@ -8,7 +8,7 @@
     "accept_language": "en-US,en;q=0.9",
     "secret": "test-secret"
   },
-  "in": { "v": 1, "n": "view", "id": "k3j9x2m1ab", "p": "/research/a-doc", "t": "A doc", "r": "https://www.google.com/", "nt": "navigate", "sw": 1512, "sh": 982, "vw": 1200, "vh": 800, "dpr": 2, "th": "dark", "tp": false, "tz": "America/New_York", "lg": "en-US", "unknown": "dropped" },
-  "out": { "v": 1, "n": "view", "id": "k3j9x2m1ab", "p": "/research/a-doc", "t": "A doc", "r": "https://www.google.com/", "nt": "navigate", "sw": 1512, "sh": 982, "vw": 1200, "vh": 800, "dpr": 2, "th": "dark", "tp": false, "tz": "America/New_York", "lg": "en-US",
+  "in": { "v": 1, "n": "view", "id": "k3j9x2m1ab", "p": "/research/a-doc", "t": "A doc", "r": "https://www.google.com/", "nt": "navigate", "us": "news", "sw": 1512, "sh": 982, "vw": 1200, "vh": 800, "dpr": 2, "th": "dark", "tz": "America/New_York", "lg": "en-US", "unknown": "dropped" },
+  "out": { "v": 1, "n": "view", "id": "k3j9x2m1ab", "p": "/research/a-doc", "t": "A doc", "r": "https://www.google.com/", "nt": "navigate", "us": "news", "sw": 1512, "sh": 982, "vw": 1200, "vh": 800, "dpr": 2, "th": "dark", "tz": "America/New_York", "lg": "en-US",
     "s": { "sv": 1, "at": "2026-10-15T02:40:30Z", "visit": "0157820d1b9f62fd", "host": "example.com", "bn": "Firefox", "bv": 128, "os": "macOS", "bot": false, "rk": "external", "rh": "google.com" } }
 }

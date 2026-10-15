@@ -8,7 +8,7 @@ fn fixture(name: &str) -> Value {
 
 #[test]
 fn every_fixture_decorates_to_its_out() {
-    for name in ["view", "leave", "click-named", "click-outbound", "vitals"] {
+    for name in ["view", "view-internal", "leave", "click-named", "click-outbound", "vitals"] {
         let f = fixture(name);
         let facts = &f["facts"];
         let s = |k: &str| facts.get(k).and_then(Value::as_str);
