@@ -28,7 +28,7 @@
 ## Review Focus
 
 1. A canonical link with a non-http scheme (`javascript:`, `mailto:`) or a different host must not replace the path: `view.p` stays `location.pathname`. Pinned in Task 4.
-2. `X-Forwarded-For` with spaces, an empty entry or garbage (`"  , abc"`) must not crash the server or key everyone on one bucket: the resolved address becomes `None`, the limiter keys on `"unknown"`, and the event is still accepted without a `visit`. Pinned in Task 12.
+2. `X-Forwarded-For` with spaces, an empty entry or garbage (`"  , abc"`) must not crash the server: the resolved address becomes `None`, the limiter keys that request on `"unknown"`, and the event is accepted without a `visit`. Pinned in Task 12.
 3. A GET beacon whose `d` is not valid JSON, or whose numeric field is `"abc"`, answers `400` and nothing is written. Pinned in Task 9.
 4. An array body in which one event is invalid is refused whole (`400`), never partially written. Pinned in Task 9.
 5. `navigator.sendBeacon` returning `false` (the browser's beacon queue is full) must fall through to `fetch` with `keepalive`. Pinned in Task 7.

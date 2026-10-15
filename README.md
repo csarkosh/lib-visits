@@ -37,9 +37,12 @@ memory, that writes what it sees as JSON lines.
 
 So the beacon is same-origin (no CORS, fewer blockers), proxy the path:
 
-    location = /v { proxy_pass http://127.0.0.1:8080; }
+    location = /v {
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_pass http://127.0.0.1:8080;
+    }
 
-and use `data-visits="/v"`.
+Use `data-visits="/v"` and run `visits serve --trusted-proxies 1`: behind any proxy the depth must be set, and a depth wrong in either direction puts every visitor in one rate-limit bucket and ends visits; confirm it once with `--log-ip`.
 
 ## Running it in the cloud
 
@@ -58,7 +61,7 @@ flowchart LR
   A --> Q[BigQuery linked dataset]
 ```
 
-Idle: nothing, Cloud Run scales to zero. The address reaches the collector and stops there; Cloud Logging holds only the JSON lines.
+Idle: nothing, Cloud Run scales to zero. The address reaches the collector and stops there; Cloud Logging holds only the JSON lines. Behind a Hosting rewrite, `--trusted-proxies` must be set; confirm the depth once with `--log-ip`.
 
 ### AWS
 
@@ -87,7 +90,7 @@ Idle: nothing on the Container Apps consumption plan, which scales to zero. The 
 
 ### Your own box
 
-nginx or Caddy in front, `--sink file:/var/log/visits.jsonl`, logrotate.
+nginx or Caddy in front, `--sink file:/var/log/visits.jsonl`, logrotate: rotate it with logrotate's `copytruncate` (the file is opened once, in append mode).
 
 ## More
 
@@ -96,7 +99,7 @@ nginx or Caddy in front, `--sink file:/var/log/visits.jsonl`, logrotate.
   (or DB-IP Lite, CC BY 4.0).
 - Web Vitals: add `<script src="/vitals.min.js"></script>` after the core.
 - Behind a proxy: `--trusted-proxies N` (the client is the Nth address from the
-  right of `X-Forwarded-For`); confirm once with `--log-ip`, then turn it off.
+  right of `X-Forwarded-For`; only the first `X-Forwarded-For` header line is read); confirm once with `--log-ip`, then turn it off.
 - Opt out: load any page with `#visits-off`; `#visits-on` undoes it.
 - The secret: keep it out of wherever the events go, and rotate it when you like;
   whoever holds both the secret and the events can test whether a given address and

@@ -2,20 +2,20 @@
 
 ## 1. Transport
 
-A client sends one event per request to the collector's path (default `/v`).
+A client sends one event per request, or an array of up to 50, to the collector's path (default `/v`).
 
 - `POST`: the body is the JSON of one event, or a JSON array of at most 50 events.
   `navigator.sendBeacon(path, string)` sends it as `text/plain`, so no preflight.
 - `GET`: the event's keys as query parameters. Numbers and booleans are their
   decimal and `true`/`false` spellings; `d` is JSON-encoded as one parameter.
 
-Caps: body 16 KB. The origin is the `Origin` header, else the host of `Referer`,
+Caps: body 16 KB. The origin is the `Origin` header, else the allowlisted origin that `Referer` starts with,
 and must be allowlisted. Statuses: `204` accepted, `400` malformed, `403` origin
 not allowed, `413` too large or more than 50 events, `429` rate limited, `405`
 other methods. Every answer carries `cache-control: no-store`. The body of an
 error is `{"error": "<reason>"}`.
 
-The limiter is a courtesy filter, not a boundary: the route is public. The client address is only as trustworthy as `--trusted-proxies` is accurate (a value higher than the real proxy count lets a client choose its own address), and when the limiter's table is full of fresh addresses, newcomers are served untracked rather than real visitors refused. A host under a flood answers it at its reverse proxy or CDN.
+The limiter is a courtesy filter, not a boundary: the route is public. The client address is only as trustworthy as `--trusted-proxies` is accurate (a value higher than the real proxy count lets a client choose its own address), and when the limiter's table is full of fresh addresses, newcomers are served untracked rather than real visitors refused. A `--trusted-proxies` wrong in either direction, too high or too low, resolves every visitor to one address or to none, so they share one bucket and no visit is computed. A host under a flood answers it at its reverse proxy or CDN.
 
 ## 2. Events
 
@@ -57,7 +57,7 @@ Added by the collector beside the client's keys, never over them.
 | `visit` | 16 lowercase hex chars (section 4); absent when no secret is configured |
 | `host` | the resolved origin's host |
 | `bn` `bv` | browser family and major version (integer), or `other` and absent |
-| `os` | `Windows`, `macOS`, `iOS`, `Android`, `Linux`, `ChromeOS`, `other` |
+| `os` | `Windows`, `macOS`, `iOS`, `Android`, `Linux`, `ChromeOS`, `other`; a platform hint outside this set is `other` |
 | `bot` | `true` when `b` is non-zero or the User-Agent contains (case-insensitive) one of: bot, crawl, spider, slurp, headless, lighthouse, pagespeed, gtmetrix, facebookexternalhit, preview |
 | `rk` | `direct` (no referrer), `internal` (referrer host equals `host`), `external` |
 | `rp` | internal only: the referrer's path |
