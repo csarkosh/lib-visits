@@ -319,7 +319,7 @@ ones dropped) plus `s`. Key order is not significant.
   },
   "in": { "v": 1, "n": "view", "id": "k3j9x2m1ab", "p": "/research/a-doc", "t": "A doc", "r": "https://www.google.com/", "nt": "navigate", "sw": 1512, "sh": 982, "vw": 1200, "vh": 800, "dpr": 2, "th": "dark", "tp": false, "tz": "America/New_York", "lg": "en-US", "unknown": "dropped" },
   "out": { "v": 1, "n": "view", "id": "k3j9x2m1ab", "p": "/research/a-doc", "t": "A doc", "r": "https://www.google.com/", "nt": "navigate", "sw": 1512, "sh": 982, "vw": 1200, "vh": 800, "dpr": 2, "th": "dark", "tp": false, "tz": "America/New_York", "lg": "en-US",
-    "s": { "sv": 1, "at": "2026-10-15T09:20:30Z", "visit": "SEE_TASK_10", "host": "example.com", "bn": "Firefox", "bv": 128, "os": "macOS", "bot": false, "rk": "external", "rh": "google.com" } }
+    "s": { "sv": 1, "at": "2026-10-15T02:40:30Z", "visit": "SEE_TASK_10", "host": "example.com", "bn": "Firefox", "bv": 128, "os": "macOS", "bot": false, "rk": "external", "rh": "google.com" } }
 }
 ```
 
@@ -337,7 +337,7 @@ ones dropped) plus `s`. Key order is not significant.
   },
   "in": { "v": 1, "n": "leave", "id": "k3j9x2m1ab", "p": "/games", "r": "https://www.example.com:443/", "e": 42, "sd": 80, "re": true },
   "out": { "v": 1, "n": "leave", "id": "k3j9x2m1ab", "p": "/games", "r": "https://www.example.com:443/", "e": 42, "sd": 80, "re": true,
-    "s": { "sv": 1, "at": "2026-10-15T09:21:30Z", "host": "example.com", "bn": "Google Chrome", "bv": 130, "os": "Windows", "bot": false, "rk": "internal", "rp": "/" } }
+    "s": { "sv": 1, "at": "2026-10-15T02:41:30Z", "host": "example.com", "bn": "Google Chrome", "bv": 130, "os": "Windows", "bot": false, "rk": "internal", "rp": "/" } }
 }
 ```
 
@@ -348,7 +348,7 @@ ones dropped) plus `s`. Key order is not significant.
   "facts": { "unix_secs": 1792032000, "ip": "192.0.2.1", "user_agent": "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)", "origin_host": "example.com" },
   "in": { "v": 1, "n": "click", "id": "zz", "p": "/", "ev": "out-github" },
   "out": { "v": 1, "n": "click", "id": "zz", "p": "/", "ev": "out-github",
-    "s": { "sv": 1, "at": "2026-10-15T09:20:00Z", "host": "example.com", "bn": "other", "os": "other", "bot": true, "rk": "direct" } }
+    "s": { "sv": 1, "at": "2026-10-15T02:40:00Z", "host": "example.com", "bn": "other", "os": "other", "bot": true, "rk": "direct" } }
 }
 ```
 
@@ -359,7 +359,7 @@ ones dropped) plus `s`. Key order is not significant.
   "facts": { "unix_secs": 1792032000, "ip": "192.0.2.1", "user_agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1", "origin_host": "example.com", "country": "IE" },
   "in": { "v": 1, "n": "click", "id": "zz", "p": "/", "u": "https://github.com/csarkosh", "b": 1 },
   "out": { "v": 1, "n": "click", "id": "zz", "p": "/", "u": "https://github.com/csarkosh", "b": 1,
-    "s": { "sv": 1, "at": "2026-10-15T09:20:00Z", "host": "example.com", "bn": "Safari", "bv": 17, "os": "iOS", "bot": true, "rk": "direct", "cc": "IE" } }
+    "s": { "sv": 1, "at": "2026-10-15T02:40:00Z", "host": "example.com", "bn": "Safari", "bv": 17, "os": "iOS", "bot": true, "rk": "direct", "cc": "IE" } }
 }
 ```
 
@@ -370,7 +370,7 @@ ones dropped) plus `s`. Key order is not significant.
   "facts": { "unix_secs": 1792032000, "ip": "192.0.2.1", "user_agent": "Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0", "origin_host": "example.com", "accept_language": "nl-NL,nl;q=0.8" },
   "in": { "v": 1, "n": "vitals", "id": "zz", "p": "/", "d": { "lcp": 1234, "cls": 0.012, "inp": 56, "ttfb": 180 } },
   "out": { "v": 1, "n": "vitals", "id": "zz", "p": "/", "d": { "lcp": 1234, "cls": 0.012, "inp": 56, "ttfb": 180 },
-    "s": { "sv": 1, "at": "2026-10-15T09:20:00Z", "host": "example.com", "bn": "Firefox", "bv": 128, "os": "Linux", "bot": false, "rk": "direct", "lg": "nl-NL" } }
+    "s": { "sv": 1, "at": "2026-10-15T02:40:00Z", "host": "example.com", "bn": "Firefox", "bv": 128, "os": "Linux", "bot": false, "rk": "direct", "lg": "nl-NL" } }
 }
 ```
 
@@ -1450,8 +1450,8 @@ mod tests {
     fn known_dates() {
         assert_eq!(ymd(0), (1970, 1, 1));
         assert_eq!(ymd(951_782_400), (2000, 2, 29));
-        assert_eq!(rfc3339(1_792_032_030), "2026-10-15T09:20:30Z");
-        assert_eq!(rfc3339(1_792_032_000), "2026-10-15T09:20:00Z");
+        assert_eq!(rfc3339(1_792_032_030), "2026-10-15T02:40:30Z");
+        assert_eq!(rfc3339(1_792_032_000), "2026-10-15T02:40:00Z");
     }
 }
 ```
@@ -2433,7 +2433,7 @@ idling at **K MB** of memory, that writes what it sees as JSON lines.
 
 3. Watch the lines
 
-       {"v":1,"n":"view","id":"k3j9x2m1ab","p":"/","t":"Home", ... ,"s":{"at":"2026-10-15T09:20:30Z","visit":"3f9a1c0e5b7d2a46","bn":"Firefox","bv":128,"os":"macOS","rk":"external","rh":"google.com", ...}}
+       {"v":1,"n":"view","id":"k3j9x2m1ab","p":"/","t":"Home", ... ,"s":{"at":"2026-10-15T02:40:30Z","visit":"3f9a1c0e5b7d2a46","bn":"Firefox","bv":128,"os":"macOS","rk":"external","rh":"google.com", ...}}
 
 ### Put it behind your site
 
