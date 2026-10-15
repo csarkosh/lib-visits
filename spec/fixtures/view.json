@@ -10,5 +10,5 @@
   },
   "in": { "v": 1, "n": "view", "id": "k3j9x2m1ab", "p": "/research/a-doc", "t": "A doc", "r": "https://www.google.com/", "nt": "navigate", "sw": 1512, "sh": 982, "vw": 1200, "vh": 800, "dpr": 2, "th": "dark", "tp": false, "tz": "America/New_York", "lg": "en-US", "unknown": "dropped" },
   "out": { "v": 1, "n": "view", "id": "k3j9x2m1ab", "p": "/research/a-doc", "t": "A doc", "r": "https://www.google.com/", "nt": "navigate", "sw": 1512, "sh": 982, "vw": 1200, "vh": 800, "dpr": 2, "th": "dark", "tp": false, "tz": "America/New_York", "lg": "en-US",
-    "s": { "sv": 1, "at": "2026-10-15T02:40:30Z", "visit": "SEE_TASK_10", "host": "example.com", "bn": "Firefox", "bv": 128, "os": "macOS", "bot": false, "rk": "external", "rh": "google.com" } }
+    "s": { "sv": 1, "at": "2026-10-15T02:40:30Z", "visit": "0157820d1b9f62fd", "host": "example.com", "bn": "Firefox", "bv": 128, "os": "macOS", "bot": false, "rk": "external", "rh": "google.com" } }
 }
