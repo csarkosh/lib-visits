@@ -80,12 +80,7 @@ strip = true
 channel = "stable"
 ```
 
-`.gitignore`:
-```
-target/
-node_modules/
-*.mmdb
-```
+`.gitignore` already exists on the branch (`target/`, `node_modules/`, `*.mmdb`, `.worktrees/`, `.superpowers/`); leave it as it is.
 
 `crates/visits-core/Cargo.toml`:
 ```toml
@@ -198,7 +193,7 @@ Expected: `added 1 package` (esbuild and its platform binary).
 - [ ] **Step 3: Commit**
 
 ```bash
-git add Cargo.toml rust-toolchain.toml .gitignore AGENTS.md CLAUDE.md client/package.json client/package-lock.json crates/
+git add Cargo.toml Cargo.lock rust-toolchain.toml .gitignore AGENTS.md CLAUDE.md client/package.json client/package-lock.json crates/
 git commit -m "chore: the workspace, two crates and the client package
 
 A Cargo workspace in the shape of ide-sarkos, an empty core crate and a
@@ -734,9 +729,10 @@ import assert from "node:assert/strict";
 import { load, last } from "./harness.mjs";
 
 test("going hidden sends a leave with engaged seconds, scroll depth and reached-the-end", () => {
-  const { sent, doc, fire, intersect, ctx } = load({ readEnd: true });
   const t0 = Date.now;
-  Date.now = () => 1_000_000; fire("document", "visibilitychange"); // still visible: no-op path
+  Date.now = () => 1_000_000;                                        // frozen before load, so the page's t0 is on this clock
+  const { sent, doc, fire, intersect, ctx } = load({ readEnd: true });
+  fire("document", "visibilitychange");                              // still visible: no-op path
   ctx.scrollY = 2000; fire("window", "scroll");                       // (2000 + 800) / 4000 = 70%
   intersect();
   Date.now = () => 1_042_000; doc.visibilityState = "hidden"; fire("document", "visibilitychange");
@@ -1041,7 +1037,7 @@ Expected: fail.
 (() => {
   var v = window.visits, P = window.PerformanceObserver, d = document;
   if (!v || !P) return;
-  var lcp, cls = 0, win = 0, w0 = 0, wl = 0, ints = {}, done;
+  var lcp, cls = 0, win = 0, w0 = -1e9, wl = -1e9, ints = {}, done;
   var ob = (type, cb, extra) => { try { new P(l => l.getEntries().forEach(cb)).observe(Object.assign({ type: type, buffered: true }, extra)) } catch (e) {} };
   ob('largest-contentful-paint', e => lcp = e.startTime);
   ob('layout-shift', e => {
