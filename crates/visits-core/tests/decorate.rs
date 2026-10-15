@@ -58,3 +58,26 @@ fn crawlers_and_referrers() {
     assert_eq!(split_referrer(""), None);
     assert_eq!(split_referrer("not a url"), None);
 }
+
+#[test]
+fn an_unparseable_referrer_is_external_without_rh() {
+    let f = fixture("view");
+    let mut input = f["in"].clone();
+    input["r"] = Value::from("garbage");
+    let event = validate_json(input.to_string().as_bytes()).unwrap().remove(0);
+    let facts = &f["facts"];
+    let out = decorate(event, &RequestFacts {
+        unix_secs: facts["unix_secs"].as_u64().unwrap(),
+        ip: None,
+        user_agent: None,
+        origin_host: "example.com",
+        accept_language: None,
+        sec_ch_ua: None,
+        sec_ch_ua_platform: None,
+        country: None,
+        secret: None,
+    });
+    let s = serde_json::to_value(&out).unwrap()["s"].clone();
+    assert_eq!(s["rk"], "external");
+    assert!(s.get("rh").is_none());
+}

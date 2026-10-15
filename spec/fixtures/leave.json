@@ -10,5 +10,5 @@
   },
   "in": { "v": 1, "n": "leave", "id": "k3j9x2m1ab", "p": "/games", "r": "https://www.example.com:443/", "e": 42, "sd": 80, "re": true },
   "out": { "v": 1, "n": "leave", "id": "k3j9x2m1ab", "p": "/games", "r": "https://www.example.com:443/", "e": 42, "sd": 80, "re": true,
-    "s": { "sv": 1, "at": "2026-10-15T02:41:30Z", "host": "example.com", "bn": "Google Chrome", "bv": 130, "os": "Windows", "bot": false, "rk": "internal", "rp": "/" } }
+    "s": { "sv": 1, "at": "2026-10-15T02:41:30Z", "host": "example.com", "bn": "Chrome", "bv": 130, "os": "Windows", "bot": false, "rk": "internal", "rp": "/" } }
 }
