@@ -5,6 +5,10 @@ edition.workspace = true
 license.workspace = true
 description = "The lib-visits collector: one static binary that takes beacons and emits JSON lines."
 
+[lib]
+name = "visits"
+path = "src/lib.rs"
+
 [[bin]]
 name = "visits"
 path = "src/main.rs"
