@@ -238,6 +238,12 @@ Stateless: every instance and every cold start agree, with no session table. The
 input and is never written. Tomorrow's salt is unrelated to today's, so nothing links two
 days; this is the ceiling, by design.
 
+The trade-off against GoatCounter's ephemeral in-memory salt is stated, not hidden: a
+persistent secret means whoever holds it together with the events can test whether a
+given address and User-Agent produced a visit on a given day. The secret therefore lives
+apart from the event store (an environment variable or a secret manager, never a log),
+and rotating it is supported and cheap: every visit ends at that moment, nothing else.
+
 ### 4.5 The decoration
 
 Added as the object `s` beside the client's keys, never over them:

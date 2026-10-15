@@ -82,6 +82,11 @@ Host comparison strips a leading `www.` and any port.
 `ip` is the client address as text (`203.0.113.9`, `2001:db8::1`), `user_agent`
 the header verbatim (empty if absent). Absent address: no `visit`.
 
+The visit cannot be reversed, but it can be tested: whoever holds the secret and
+the events can check whether a given address and User-Agent produced a visit on
+a given day. Keep the secret out of wherever the events are stored, and rotate
+it; a rotation ends every visit at that moment, which is the only cost.
+
 ## 5. JSON lines
 
 A sink receives one JSON object per line: the event's keys as received (unknown

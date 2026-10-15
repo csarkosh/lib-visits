@@ -2495,6 +2495,9 @@ nginx or Caddy in front, `--sink file:/var/log/visits.jsonl`, logrotate.
 - Behind a proxy: `--trusted-proxies N` (the client is the Nth address from the
   right of `X-Forwarded-For`); confirm once with `--log-ip`, then turn it off.
 - Opt out: load any page with `#visits-off`; `#visits-on` undoes it.
+- The secret: keep it out of wherever the events go, and rotate it when you like;
+  whoever holds both the secret and the events can test whether a given address and
+  browser visited on a given day, and a rotation ends every visit at that moment.
 - Another language: `spec/SPEC.md` is the whole contract.
 - Not collected, on purpose: canvas, WebGL, audio, fonts, high-entropy client
   hints, the query string beyond campaign parameters, anything across days.
