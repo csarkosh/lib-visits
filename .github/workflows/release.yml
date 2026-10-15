@@ -1,0 +1,66 @@
+# Builds the collector for each platform and, on a v* tag, attaches the binaries and the
+# client scripts to a GitHub Release. A manual run builds and uploads artifacts only, to try
+# the build before tagging.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          # Static musl binaries, cross-compiled in cross's containers.
+          - { name: linux-amd64, os: ubuntu-latest, target: x86_64-unknown-linux-musl, cross: true }
+          - { name: linux-arm64, os: ubuntu-latest, target: aarch64-unknown-linux-musl, cross: true }
+          # macos-14 runs on Apple silicon, so this is a native build.
+          - { name: macos-arm64, os: macos-14, target: aarch64-apple-darwin, cross: false }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup target add ${{ matrix.target }}
+      - if: matrix.cross
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cross
+      - name: Build
+        run: ${{ matrix.cross && 'cross' || 'cargo' }} build --release --locked -p visits --target ${{ matrix.target }}
+      - name: Package
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          [[ "$GITHUB_REF_TYPE" == "tag" ]] || version="dev"
+          dir="visits-${version}-${{ matrix.name }}"
+          mkdir -p "dist/$dir"
+          cp "target/${{ matrix.target }}/release/visits" README.md LICENSE "dist/$dir/"
+          tar -C dist -czf "dist/$dir.tar.gz" "$dir"
+          (cd dist && shasum -a 256 "$dir.tar.gz" > "$dir.tar.gz.sha256")
+          file "dist/$dir/visits"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: dist/*.tar.gz*
+
+  release:
+    if: github.ref_type == 'tag'
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp client/dist/visits.min.js client/dist/vitals.min.js dist/
+          gh release create "$GITHUB_REF_NAME" dist/* --title "$GITHUB_REF_NAME" --generate-notes
