@@ -38,3 +38,22 @@ test("a page that loads hidden accrues no engaged time until it is seen", () => 
   assert.equal(sent.length, 1, "a leave with zeros, and no view");
   assert.equal(last(sent).e, 0);
 });
+
+test("engaged time accumulates across visible stretches, hidden time is not counted, depth keeps its max", () => {
+  const t0 = Date.now;
+  try {
+    let now = 1_000_000;
+    Date.now = () => now;
+    const { sent, doc, fire, ctx } = load();
+    now += 10_000; doc.visibilityState = "hidden"; fire("document", "visibilitychange");
+    assert.equal(last(sent).e, 10);
+    now += 30_000; doc.visibilityState = "visible"; fire("document", "visibilitychange");
+    ctx.scrollY = 2000; fire("window", "scroll");
+    ctx.scrollY = 0; fire("window", "scroll");
+    now += 5_000; doc.visibilityState = "hidden"; fire("document", "visibilitychange");
+    const lv = last(sent);
+    assert.equal(lv.n, "leave");
+    assert.equal(lv.e, 15);
+    assert.equal(lv.sd, 70);
+  } finally { Date.now = t0; }
+});

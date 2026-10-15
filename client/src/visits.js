@@ -41,10 +41,12 @@
     }, cp));
   } catch (e) {} };
   var vis = d.visibilityState == 'visible', t0 = Date.now(), eng = 0, sd = 0, re, lastJ = '';
-  var depth = () => { sd = Math.max(sd, Math.min(100, Math.round((scrollY + innerHeight) / d.documentElement.scrollHeight * 100))) };
-  addEventListener('scroll', depth, { passive: true }); depth();
-  var end = d.querySelector('[data-read-end]');
-  if (end && w.IntersectionObserver) new IntersectionObserver((es, o) => { if (es.some(x => x.isIntersecting)) { re = true; o.disconnect() } }).observe(end);
+  var depth = () => { sd = Math.max(sd, Math.min(100, Math.round((scrollY + innerHeight) / d.documentElement.scrollHeight * 100) || 0)) };
+  try {
+    addEventListener('scroll', depth, { passive: true }); depth();
+    var end = d.querySelector('[data-read-end]');
+    if (end && w.IntersectionObserver) new IntersectionObserver((es, o) => { if (es.some(x => x.isIntersecting)) { re = true; o.disconnect() } }).observe(end);
+  } catch (e) {}
   var leave = () => {
     if (vis) { eng += Date.now() - t0; vis = false }
     var data = { e: Math.round(eng / 1000), sd: sd, re: re }, j = JSON.stringify(data);
