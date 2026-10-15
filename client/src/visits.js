@@ -1,8 +1,9 @@
 (() => {
   var d = document, w = window, n = navigator, l = location, sc = d.querySelector('script[data-visits]');
   if (!sc || w !== w.parent) return;
-  var ds = sc.dataset, ep = ds.visits, get = ds.visitsMethod == 'get', h = l.hash, ls = w.localStorage;
+  var ds = sc.dataset, ep = ds.visits, get = ds.visitsMethod == 'get', h = l.hash;
   try {
+    var ls = w.localStorage;
     if (h == '#visits-off') { ls.visits = 'off'; return }
     if (h == '#visits-on') delete ls.visits;
     if (ls.visits == 'off') return;
@@ -18,6 +19,7 @@
     try {
       if (get) {
         if (e.d) e.d = JSON.stringify(e.d);
+        e = JSON.parse(JSON.stringify(e));
         fetch(ep + (ep.indexOf('?') < 0 ? '?' : '&') + new URLSearchParams(e), { keepalive: true, mode: 'no-cors' });
       } else {
         var j = JSON.stringify(e);
@@ -26,18 +28,18 @@
     } catch (e) {}
   };
 
-  var view = () => {
+  var view = () => { try {
     var q = new URLSearchParams(l.search), cp = {}, keys = { utm_source: 'us', utm_medium: 'um', utm_campaign: 'uc', utm_term: 'ut', utm_content: 'uo', ref: 'cr' }, k;
     for (k in keys) if (q.has(k)) cp[keys[k]] = q.get(k).slice(0, 100);
     var m = s => matchMedia(s).matches || undefined, nav = performance.getEntriesByType('navigation')[0] || {};
     send('view', Object.assign({
-      t: d.title.slice(0, 200), r: d.referrer.slice(0, 2048), nt: nav.type,
+      t: d.title.slice(0, 200), r: d.referrer.split(/[?#]/)[0].slice(0, 2048), nt: nav.type,
       sw: screen.width, sh: screen.height, vw: innerWidth, vh: innerHeight, dpr: +devicePixelRatio.toFixed(2),
       th: m('(prefers-color-scheme: dark)') ? 'dark' : 'light', rm: m('(prefers-reduced-motion: reduce)'), tp: n.maxTouchPoints > 0 || undefined,
       tz: Intl.DateTimeFormat().resolvedOptions().timeZone, lg: n.language,
       b: (n.webdriver ? 1 : w.callPhantom || w._phantom ? 2 : w.__nightmare ? 3 : d.__selenium_unwrapped || d.__webdriver_evaluate ? 4 : 0) || undefined
     }, cp));
-  };
+  } catch (e) {} };
   var once = () => { if (d.visibilityState == 'visible') { d.removeEventListener('visibilitychange', once); view() } };
   d.visibilityState == 'visible' ? view() : d.addEventListener('visibilitychange', once);
 })();

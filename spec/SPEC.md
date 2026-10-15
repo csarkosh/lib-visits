@@ -28,7 +28,7 @@ whose values are strings (≤ 200 chars), numbers or booleans.
 | Key | Type | Cap | Meaning |
 |---|---|---|---|
 | `t` | string | 200 | title |
-| `r` | string | 2048 | referrer as the browser gave it |
+| `r` | string | 2048 | referrer, origin and path only: no query, no fragment |
 | `us` `um` `uc` `ut` `uo` `cr` | string | 100 | utm_source, utm_medium, utm_campaign, utm_term, utm_content, ref |
 | `nt` | string | 16 | `navigate`, `reload`, `back_forward`, `prerender` |
 | `sw` `sh` `vw` `vh` | integer | | screen and viewport size |

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { load, last } from "./harness.mjs";
 
 test("a visible page sends one view with the spec's keys and nothing else from the query", () => {
-  const { sent } = load();
+  const { sent } = load({ referrer: "https://www.google.com/search?q=secret#x" });
   assert.equal(sent.length, 1);
   const v = last(sent);
   assert.equal(v.v, 1);
@@ -11,7 +11,7 @@ test("a visible page sends one view with the spec's keys and nothing else from t
   assert.match(v.id, /^[a-z0-9]{10}$/);
   assert.equal(v.p, "/research/a-doc");
   assert.equal(v.t, "A doc");
-  assert.equal(v.r, "https://www.google.com/");
+  assert.equal(v.r, "https://www.google.com/search", "no query or fragment in the referrer");
   assert.equal(v.us, "news");
   assert.equal("token" in v, false, "the rest of the query never leaves the page");
   assert.equal(v.nt, "navigate");
@@ -58,4 +58,22 @@ test("#visits-off writes the opt-out and stops; #visits-on clears it", () => {
   const on = load({ href: "https://example.com/#visits-on", storage: { visits: "off" } });
   assert.equal(on.sent.length, 1);
   assert.equal("visits" in on.ctx.localStorage, false);
+});
+
+test("GET mode drops absent values instead of sending the string undefined", () => {
+  const { sent } = load({ dataset: { visits: "https://stats.example/v", visitsMethod: "get" } });
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].method, "GET");
+  assert.equal(sent[0].url.includes("undefined"), false);
+  const q = new URL(sent[0].url).searchParams;
+  for (const k of ["rm", "tp", "b"]) assert.equal(q.has(k), false, k);
+  assert.equal(q.get("n"), "view");
+});
+
+test("blocked storage does not stop the view", () => {
+  assert.equal(load({ storageThrows: true }).sent.length, 1);
+});
+
+test("a missing browser API drops the view without throwing into the page", () => {
+  assert.doesNotThrow(() => load({ noPerformance: true }));
 });

@@ -27,6 +27,8 @@ export function load(options = {}) {
     webdriver = false,
     scripts = ["visits"],
     framed = false,
+    storageThrows = false,
+    noPerformance = false,
   } = options;
 
   const sent = [];
@@ -63,6 +65,8 @@ export function load(options = {}) {
     addEventListener: (t, f) => win.addEventListener(t, f),
     removeEventListener: (t, f) => win.removeEventListener(t, f),
   };
+  if (storageThrows) Object.defineProperty(ctx, "localStorage", { get() { throw new Error("blocked"); } });
+  if (noPerformance) delete ctx.performance;
   ctx.window = ctx;
   ctx.parent = framed ? {} : ctx;
   ctx.self = ctx;
