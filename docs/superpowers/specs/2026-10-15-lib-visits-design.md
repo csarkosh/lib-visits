@@ -128,7 +128,8 @@ rename its series.
 
 `vitals.js` is a second script that loads after the core and uses `visits.send`. It
 registers `PerformanceObserver`s at load and sends one `vitals` event, once, on the same
-hidden signal as `leave`:
+hidden signal as `leave`. As with every event sent through `visits.send`, its values ride
+under `d`:
 
 | Key | Value |
 |---|---|
