@@ -1,0 +1,126 @@
+<!doctype html>
+<!--
+  The README's hero: one visit, start to finish, in a macOS-style window. Rendered by
+  scripts/readme-image.sh into docs/images/journey-light.png and journey-dark.png; open this file
+  in a browser with ?theme=dark or ?theme=light to look at it. Sample data: edit VISIT below.
+  Colours are csarko.sh's dashboard tokens; fonts are Inter and JetBrains Mono (OFL, fonts/OFL.txt).
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>lib-visits README image</title>
+<style>
+  @font-face { font-family: "Inter"; font-weight: 100 900; src: url("fonts/inter-latin-var.woff2") format("woff2"); }
+  @font-face { font-family: "JetBrains Mono"; font-weight: 100 800; src: url("fonts/jetbrains-mono-latin-var.woff2") format("woff2"); }
+  :root {
+    --surface: #ffffff; --surface-2: #eef0f4; --border: rgba(10, 11, 14, 0.09); --border-strong: rgba(10, 11, 14, 0.16);
+    --text: #12151c; --muted: #4a5263; --faint: #5f677a; --accent: #0a735f;
+    --accent-tint: rgba(125, 211, 192, 0.20); --accent-border: rgba(10, 115, 95, 0.45);
+    --chrome: linear-gradient(#f3f3f3, #e9e9e9); --chrome-line: rgba(0, 0, 0, 0.12); --chrome-title: #4d4d4d;
+    --frame: rgba(0, 0, 0, 0.18); --shadow: 0 22px 48px rgba(0, 0, 0, 0.22), 0 6px 14px rgba(0, 0, 0, 0.10);
+  }
+  :root[data-theme="dark"] {
+    --surface: #111318; --surface-2: #161922; --border: rgba(255, 255, 255, 0.08); --border-strong: rgba(255, 255, 255, 0.14);
+    --text: #e8eaf0; --muted: #a0a8b8; --faint: #7d8597; --accent: #7dd3c0;
+    --accent-tint: rgba(125, 211, 192, 0.08); --accent-border: rgba(125, 211, 192, 0.45);
+    --chrome: linear-gradient(#34353a, #2b2c30); --chrome-line: rgba(0, 0, 0, 0.55); --chrome-title: #b4b6bd;
+    --frame: rgba(255, 255, 255, 0.14); --shadow: 0 22px 48px rgba(0, 0, 0, 0.55), 0 6px 14px rgba(0, 0, 0, 0.35);
+  }
+  :root {
+    --ord-1: var(--accent);
+    --ord-3: color-mix(in srgb, var(--accent) 66%, var(--surface));
+    --ord-4: color-mix(in srgb, var(--accent) 50%, var(--surface));
+    --sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+    --mono: "JetBrains Mono", ui-monospace, monospace;
+  }
+  html, body { margin: 0; background: transparent; }
+  body { padding: 40px 48px 64px; width: 1008px; font-family: var(--sans); color: var(--text); -webkit-font-smoothing: antialiased; }
+
+  /* The window: a title bar with the three controls, then the content, in one rounded frame. */
+  .window { border-radius: 12px; overflow: hidden; background: var(--surface); box-shadow: 0 0 0 1px var(--frame), var(--shadow); }
+  .titlebar { position: relative; height: 38px; display: flex; align-items: center; padding: 0 14px; background: var(--chrome); border-bottom: 1px solid var(--chrome-line); }
+  .lights { display: flex; gap: 8px; }
+  .lights span { width: 12px; height: 12px; border-radius: 50%; box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.18); }
+  .lights span:nth-child(1) { background: #ff5f57; }
+  .lights span:nth-child(2) { background: #febc2e; }
+  .lights span:nth-child(3) { background: #28c840; }
+  .title { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 500; color: var(--chrome-title); }
+  .content { padding: 22px 24px 20px; }
+
+  h2 { margin: 0 0 4px; font-size: 1.1rem; font-weight: 600; letter-spacing: -0.015em; }
+  .sub { margin: 0 0 18px; font-size: 13px; color: var(--muted); line-height: 1.5; }
+  .flow { display: flex; align-items: stretch; }
+  .node { flex: 1 1 0; min-width: 0; border: 1px solid var(--border); background: var(--surface-2); border-radius: 12px; padding: 12px 12px 11px; display: flex; flex-direction: column; gap: 3px; }
+  .node.edge { background: var(--accent-tint); border-color: var(--accent-border); }
+  .kicker { font-family: var(--mono); font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); }
+  .main { font-size: 15px; font-weight: 600; letter-spacing: -0.01em; line-height: 1.3; }
+  .path { font-family: var(--mono); font-size: 13px; font-weight: 500; }
+  .small { font-size: 12px; color: var(--muted); line-height: 1.35; }
+  .time { margin-top: auto; padding-top: 8px; font-family: var(--mono); font-size: 20px; font-weight: 600; letter-spacing: -0.02em; }
+  .time small { font-size: 11px; font-weight: 400; color: var(--faint); letter-spacing: 0; margin-left: 4px; }
+  .time.at { font-size: 13px; font-weight: 500; color: var(--muted); }
+  .depth { height: 5px; border-radius: 3px; background: var(--border-strong); overflow: hidden; margin-top: 6px; }
+  .depth > span { display: block; height: 100%; background: var(--accent); }
+  .badge { align-self: flex-start; margin-top: 6px; font-family: var(--mono); font-size: 10.5px; color: var(--accent); border: 1px solid var(--accent-border); border-radius: 999px; padding: 1px 8px; }
+  .arrow { flex: 0 0 26px; display: flex; align-items: center; justify-content: center; color: var(--faint); }
+  .strip { display: flex; height: 12px; border-radius: 6px; overflow: hidden; gap: 2px; margin-top: 18px; }
+  .legend { display: flex; gap: 2px; margin-top: 6px; }
+  .legend span { font-family: var(--mono); font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; }
+  .axis { display: flex; justify-content: space-between; font-family: var(--mono); font-size: 10.5px; color: var(--faint); margin-top: 2px; }
+  .total { margin: 14px 0 0; padding-top: 12px; border-top: 1px solid var(--border); font-size: 13px; color: var(--muted); }
+  .total b { color: var(--text); font-weight: 600; }
+</style>
+</head>
+<body>
+<div class="window">
+  <div class="titlebar"><div class="lights"><span></span><span></span><span></span></div><div class="title" id="title"></div></div>
+  <div class="content">
+    <h2>One visit, start to finish</h2>
+    <p class="sub">The referrer that started it, every page with its engaged time and scroll depth from the leave beacon, and the click that ended it. Sample data.</p>
+    <div class="flow" id="flow"></div>
+    <div class="strip" id="strip"></div>
+    <div class="legend" id="legend"></div>
+    <div class="axis"><span>0:00</span><span id="end"></span></div>
+    <p class="total" id="total"></p>
+  </div>
+</div>
+<script>
+// The sample visit. `secs` is engaged time, `depth` the scroll depth in percent.
+const VISIT = {
+  window: 'Visits · example.com',
+  from: { name: 'Google', detail: 'search, google.com', summary: 'came from search' },
+  pages: [
+    { path: '/', title: 'Home', secs: 41, depth: 70 },
+    { path: '/blog', title: 'Blog', secs: 22, depth: 45 },
+    { path: '/blog/launch', title: 'Launch post', secs: 185, depth: 100, read: true },
+  ],
+  left: { name: 'Clicked out to GitHub', detail: 'an out-github event', summary: 'left for GitHub' },
+};
+
+document.documentElement.dataset.theme = new URLSearchParams(location.search).get('theme') === 'dark' ? 'dark' : 'light';
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const fmt = (s) => (s >= 60 ? `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, '0')}s` : `${s}s`);
+const clock = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+const arrow = '<div class="arrow"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8h11M9 4l4 4-4 4"/></svg></div>';
+document.getElementById('title').textContent = VISIT.window;
+let html = `<div class="node edge"><span class="kicker">Arrived from</span><span class="main">${esc(VISIT.from.name)}</span><span class="small">${esc(VISIT.from.detail)}</span><span class="time at">at 0:00</span></div>`;
+let at = 0;
+VISIT.pages.forEach((p, i) => {
+  html += `${arrow}<div class="node"><span class="kicker">Page ${i + 1} · at ${clock(at)}</span><span class="main path">${esc(p.path)}</span><span class="small">${esc(p.title)}</span>`
+    + `<div class="depth"><span style="width:${p.depth}%"></span></div>`
+    + (p.read ? '<span class="badge">read to the end</span>' : `<span class="small" style="margin-top:4px">scrolled ${p.depth}%</span>`)
+    + `<span class="time">${fmt(p.secs)}<small>engaged</small></span></div>`;
+  at += p.secs;
+});
+html += `${arrow}<div class="node edge"><span class="kicker">Left</span><span class="main">${esc(VISIT.left.name)}</span><span class="small">${esc(VISIT.left.detail)}</span><span class="time at">at ${clock(at)}</span></div>`;
+document.getElementById('flow').innerHTML = html;
+const colors = ['var(--ord-3)', 'var(--ord-4)', 'var(--ord-1)'];
+document.getElementById('strip').innerHTML = VISIT.pages.map((p, i) => `<span style="flex:${p.secs} 1 0;background:${colors[i % colors.length]}"></span>`).join('');
+document.getElementById('legend').innerHTML = VISIT.pages.map((p) => `<span style="flex:${p.secs} 1 0">${esc(p.path)} ${fmt(p.secs)}</span>`).join('');
+document.getElementById('end').textContent = clock(at);
+const reads = VISIT.pages.filter((p) => p.read).length;
+document.getElementById('total').innerHTML = `<b>${fmt(at)}</b> on the site · <b>${VISIT.pages.length}</b> pages · <b>${reads}</b> read to the end · ${esc(VISIT.from.summary)}, ${esc(VISIT.left.summary)}`;
+document.fonts.ready.then(() => { document.body.dataset.ready = '1'; });
+</script>
+</body>
+</html>

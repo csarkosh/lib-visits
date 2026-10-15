@@ -11,3 +11,7 @@ Web Vitals module) and `crates/` (a Rust collector, one static binary). Design:
 - No cookies, no storage (except the visitor's `#visits-off`), no fingerprinting API.
 - No em-dashes. Conventional Commits. Stage paths explicitly, never `git add -A`.
 - `docs/superpowers/` holds specs and plans and is never published.
+- The README's hero, `docs/images/journey-{light,dark}.png`, is drawn by `scripts/readme-image.sh` from
+  `scripts/readme-image/journey.html` (a sample visit in a macOS-style window; edit `VISIT` there),
+  at 2x on a transparent background. Needs Chrome and Pillow. csarko.sh copies the pair for its
+  `/apps` card (`.agents/skills/site-quality/assets/apps/lib-visits*.png`); refresh that copy too.
