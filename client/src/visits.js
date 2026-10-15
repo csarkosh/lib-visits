@@ -54,6 +54,15 @@
   };
   d.addEventListener('visibilitychange', () => { if (d.visibilityState == 'hidden') leave(); else if (!vis) { vis = true; t0 = Date.now() } });
   addEventListener('pagehide', leave);
+  var click = ev => {
+    var el = ev.target && ev.target.closest && ev.target.closest('a[href],[data-visits-event]');
+    if (!el) return;
+    var name = el.dataset.visitsEvent;
+    if (name) send('click', { ev: name });
+    else if (el.host && el.host != l.host) send('click', { u: el.origin + el.pathname });
+  };
+  addEventListener('click', click, true); addEventListener('auxclick', click, true);
+  w.visits = { send: (name, data) => { if (/^[a-z][a-z0-9_-]{0,31}$/.test(name)) send(name, { d: data }) }, id: id };
   var once = () => { if (d.visibilityState == 'visible') { d.removeEventListener('visibilitychange', once); view() } };
   d.visibilityState == 'visible' ? view() : d.addEventListener('visibilitychange', once);
 })();
