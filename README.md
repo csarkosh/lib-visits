@@ -1,11 +1,11 @@
 # lib-visits
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/images/journeys-dark.png">
-  <img alt="A dashboard built on lib-visits: where visits came from, the pages they read with median engaged time and the share read to the end, and where they went next" src="docs/images/journeys-light.png" width="720">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/journey-dark.png">
+  <img alt="One visit, start to finish: arrived from a Google search, read the home page for 41 seconds, the blog for 22 seconds and a launch post for 3 minutes 5 seconds to the end, then clicked out to GitHub" src="docs/images/journey-light.png" width="760">
 </picture>
 
-<sub>The csarko.sh dashboard, built on these JSON lines in BigQuery (sample data).</sub>
+<sub>One visit as lib-visits sees it: where it came from, each page with its engaged time and scroll depth, and how it ended (sample data).</sub>
 
 Visits and journeys for your site. No cookies, no storage unless you opt out, no fingerprinting.
 One script of **3,068 bytes** minified on the page and a **1.1 MB** static binary on the
