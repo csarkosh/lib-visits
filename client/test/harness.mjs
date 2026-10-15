@@ -59,9 +59,14 @@ export function load(options = {}) {
     screen: { width: 1512, height: 982 }, innerWidth: 1200, innerHeight: 800, devicePixelRatio: 2, scrollY: 0,
     matchMedia: (q) => ({ matches: q.includes("dark") }),
     Intl: { DateTimeFormat: () => ({ resolvedOptions: () => ({ timeZone: "America/New_York" }) }) },
-    performance: { getEntriesByType: (t) => (t === "navigation" ? [{ type: "navigate", responseStart: 180 }] : []) },
+    performance: { interactionCount: 0, getEntriesByType: (t) => (t === "navigation" ? [{ type: "navigate", responseStart: 180 }] : []) },
     localStorage: storage,
     IntersectionObserver: class { constructor(cb) { this.cb = cb; observers.push(this); } observe() {} disconnect() { this.gone = true; } },
+    PerformanceObserver: class {
+      constructor(cb) { this.cb = cb; }
+      observe(opts) { (ctx.perfObservers ??= []).push({ type: opts.type, opts, cb: this.cb }); }
+    },
+    perfObservers: [],
     Math, JSON, Object, Date, URL, URLSearchParams, console,
     addEventListener: (t, f) => win.addEventListener(t, f),
     removeEventListener: (t, f) => win.removeEventListener(t, f),
@@ -84,3 +89,7 @@ export function load(options = {}) {
 }
 
 export const last = (sent) => JSON.parse(sent.at(-1).body);
+
+export const emit = (ctx, type, entries) => {
+  for (const o of ctx.perfObservers) if (o.type === type) o.cb({ getEntries: () => entries });
+};
