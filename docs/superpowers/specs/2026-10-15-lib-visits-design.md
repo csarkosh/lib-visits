@@ -324,10 +324,25 @@ feature, because a short guide is the one people try. In order:
    3. Watch the lines: `{"v":1,"n":"view","p":"/", ... "s":{"visit":"3f9a...","bn":"Firefox", ...}}`
 4. "Put it behind your site": the two-line nginx `location` that proxies `/v`, so the
    beacon is same-origin.
-5. Where to go next: the sinks, GeoIP, the Web Vitals module, `SPEC.md` for another
+5. **Running it in the cloud**: one high-level system diagram each for GCP, AWS and
+   Azure, in Mermaid (GitHub renders it; no image files to keep in step), each the same
+   shape so the reader sees that only the names change: the browser, the site's host or
+   CDN rewriting the beacon path to the collector, the `visits` container, its stdout
+   into the provider's log service, and the query layer a dashboard reads.
+   - GCP: Firebase Hosting or Cloud CDN → Cloud Run → Cloud Logging → a Log Analytics
+     bucket linked as a BigQuery dataset.
+   - AWS: CloudFront → ECS on Fargate or App Runner → CloudWatch Logs → Logs Insights,
+     or a subscription into S3 and Athena.
+   - Azure: Front Door or Static Web Apps → Container Apps → Azure Monitor → a Log
+     Analytics workspace (KQL).
+   Each diagram has a two-line caption: what the host pays for at idle (nothing, in all
+   three, with scale-to-zero) and where the IP stops (the collector; the logs never hold
+   it). Then the bare-metal row: nginx or Caddy in front of the binary, logs to a file.
+6. Where to go next: the sinks, GeoIP, the Web Vitals module, `SPEC.md` for another
    language, the opt-out, what is deliberately not collected.
 
-Nothing in the README names csarko.sh's infrastructure.
+Nothing in the README names csarko.sh's infrastructure; the GCP diagram is generic even
+though it is the shape csarko.sh uses.
 
 ## 8. Out of scope for v1
 
