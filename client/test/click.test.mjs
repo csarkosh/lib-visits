@@ -50,3 +50,17 @@ test("a click with no target, or a target without closest, throws nothing and se
   fire("window", "click", {});
   assert.equal(sent.length, before);
 });
+
+test("sendBeacon returning false falls through to fetch keepalive POST", () => {
+  const { sent } = load({ beaconReturns: false });
+  assert.equal(sent[0].method, "beacon");
+  assert.equal(sent[1].method, "POST");
+  assert.equal(sent[1].keepalive, true);
+  assert.equal(sent[1].body, sent[0].body);
+});
+
+test("a browser without sendBeacon uses fetch", () => {
+  const { sent } = load({ noBeacon: true });
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].method, "POST");
+});

@@ -29,6 +29,7 @@ export function load(options = {}) {
     framed = false,
     storageThrows = false,
     noPerformance = false,
+    noBeacon = false,
   } = options;
 
   const sent = [];
@@ -67,6 +68,7 @@ export function load(options = {}) {
   };
   if (storageThrows) Object.defineProperty(ctx, "localStorage", { get() { throw new Error("blocked"); } });
   if (noPerformance) delete ctx.performance;
+  if (noBeacon) delete navigator.sendBeacon;
   ctx.window = ctx;
   ctx.parent = framed ? {} : ctx;
   ctx.self = ctx;
