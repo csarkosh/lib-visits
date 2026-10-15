@@ -84,6 +84,10 @@ flowchart LR
 ## More
 
 - Sinks: `--sink stdout` (default) or `--sink file:<path>`.
+- Your own visits: `--ignore-ips 203.0.113.9,2001:db8::/32` (or `VISITS_IGNORE_IPS`) answers
+  beacons from those addresses and writes nothing.
+- Event time: each line's `time` is the browser's clock at the event (when within five minutes
+  of receipt), so beacons that arrive together after a cold start keep their order.
 - Countries: build with `--features geoip` and pass `--geoip GeoLite2-Country.mmdb`
   (or DB-IP Lite, CC BY 4.0).
 - Web Vitals: add `<script src="/vitals.min.js"></script>` after the core.
