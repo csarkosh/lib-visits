@@ -1,8 +1,10 @@
 <!doctype html>
 <!--
   The README's hero: one visit, start to finish, in a macOS-style window. Rendered by
-  scripts/readme-image.sh into docs/images/journey-light.png and journey-dark.png; open this file
-  in a browser with ?theme=dark or ?theme=light to look at it. Sample data: edit VISIT below.
+  scripts/readme-image.sh into docs/images/journey-light.png and journey-dark.png, and with
+  ?layout=vertical, the same visit stacked top to bottom in a narrow window, into
+  journey-vertical-light.png and journey-vertical-dark.png (a card's portrait preview). Open this
+  file in a browser with ?theme=dark or ?theme=light to look at it. Sample data: edit VISIT below.
   Colours are csarko.sh's dashboard tokens; fonts are Inter and JetBrains Mono (OFL, fonts/OFL.txt).
 -->
 <html lang="en">
@@ -69,6 +71,22 @@
   .axis { display: flex; justify-content: space-between; font-family: var(--mono); font-size: 10.5px; color: var(--faint); margin-top: 2px; }
   .total { margin: 14px 0 0; padding-top: 12px; border-top: 1px solid var(--border); font-size: 13px; color: var(--muted); }
   .total b { color: var(--text); font-weight: 600; }
+
+  /* The vertical layout, a card's thumbnail: one step a row, the time at the row's right, the
+     arrows pointing down. The lead and the time strip go (they repeat what the steps say), and the
+     shadow is tighter so the window fills more of a small frame. */
+  :root.vertical { --shadow: 0 10px 22px rgba(0, 0, 0, 0.16), 0 3px 8px rgba(0, 0, 0, 0.08); }
+  :root.vertical[data-theme="dark"] { --shadow: 0 10px 22px rgba(0, 0, 0, 0.5), 0 3px 8px rgba(0, 0, 0, 0.3); }
+  :root.vertical body { width: 440px; padding: 22px 26px 36px; }
+  :root.vertical h2 { margin-bottom: 14px; }
+  :root.vertical .sub, :root.vertical .strip, :root.vertical .axis { display: none; }
+  :root.vertical .flow { flex-direction: column; }
+  :root.vertical .node { flex: none; position: relative; padding: 11px 13px; }
+  :root.vertical .node .time { position: absolute; right: 13px; top: 11px; padding-top: 0; }
+  :root.vertical .arrow { flex: 0 0 22px; }
+  :root.vertical .arrow svg { transform: rotate(90deg); }
+  :root.vertical .legend { display: none; }
+  :root.vertical .total { margin-top: 16px; }
 </style>
 </head>
 <body>
@@ -97,7 +115,9 @@ const VISIT = {
   left: { name: 'Clicked out to GitHub', detail: 'an out-github event', summary: 'left for GitHub' },
 };
 
-document.documentElement.dataset.theme = new URLSearchParams(location.search).get('theme') === 'dark' ? 'dark' : 'light';
+const query = new URLSearchParams(location.search);
+document.documentElement.dataset.theme = query.get('theme') === 'dark' ? 'dark' : 'light';
+if (query.get('layout') === 'vertical') document.documentElement.classList.add('vertical');
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const fmt = (s) => (s >= 60 ? `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, '0')}s` : `${s}s`);
 const clock = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
