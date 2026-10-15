@@ -1,0 +1,7 @@
+{
+  "name": "an outbound click with the client's bot marker and a country",
+  "facts": { "unix_secs": 1792032000, "ip": "192.0.2.1", "user_agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1", "origin_host": "example.com", "country": "IE" },
+  "in": { "v": 1, "n": "click", "id": "zz", "p": "/", "u": "https://github.com/csarkosh", "b": 1 },
+  "out": { "v": 1, "n": "click", "id": "zz", "p": "/", "u": "https://github.com/csarkosh", "b": 1,
+    "s": { "sv": 1, "at": "2026-10-15T02:40:00Z", "host": "example.com", "bn": "Safari", "bv": 17, "os": "iOS", "bot": true, "rk": "direct", "cc": "IE" } }
+}

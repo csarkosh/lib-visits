@@ -1,0 +1,14 @@
+{
+  "name": "a leave from an internal navigation, Chrome on Windows by client hints, no secret",
+  "facts": {
+    "unix_secs": 1792032090,
+    "ip": "198.51.100.7",
+    "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+    "origin_host": "example.com",
+    "sec_ch_ua": "\"Chromium\";v=\"130\", \"Google Chrome\";v=\"130\", \"Not?A_Brand\";v=\"99\"",
+    "sec_ch_ua_platform": "\"Windows\""
+  },
+  "in": { "v": 1, "n": "leave", "id": "k3j9x2m1ab", "p": "/games", "r": "https://www.example.com:443/", "e": 42, "sd": 80, "re": true },
+  "out": { "v": 1, "n": "leave", "id": "k3j9x2m1ab", "p": "/games", "r": "https://www.example.com:443/", "e": 42, "sd": 80, "re": true,
+    "s": { "sv": 1, "at": "2026-10-15T02:41:30Z", "host": "example.com", "bn": "Google Chrome", "bv": 130, "os": "Windows", "bot": false, "rk": "internal", "rp": "/" } }
+}

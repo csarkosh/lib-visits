@@ -1,0 +1,11 @@
+[
+  { "name": "not json", "in": "{", "error": "malformed json" },
+  { "name": "wrong version", "in": { "v": 2, "n": "view", "id": "a", "p": "/" }, "error": "unknown version" },
+  { "name": "missing id", "in": { "v": 1, "n": "view", "p": "/" }, "error": "missing id" },
+  { "name": "bad name", "in": { "v": 1, "n": "View!", "id": "a", "p": "/" }, "error": "bad name" },
+  { "name": "wrong type", "in": { "v": 1, "n": "view", "id": "a", "p": "/", "sw": "wide" }, "error": "bad type: sw" },
+  { "name": "title too long", "in": { "v": 1, "n": "view", "id": "a", "p": "/", "t": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" }, "error": "too long: t" },
+  { "name": "payload too wide", "in": { "v": 1, "n": "x", "id": "a", "p": "/", "d": { "a": 1, "b": 1, "c": 1, "d": 1, "e": 1, "f": 1, "g": 1, "h": 1, "i": 1, "j": 1, "k": 1 } }, "error": "too many keys: d" },
+  { "name": "payload not flat", "in": { "v": 1, "n": "x", "id": "a", "p": "/", "d": { "a": { "b": 1 } } }, "error": "bad type: d.a" },
+  { "name": "one bad in an array", "in": [ { "v": 1, "n": "view", "id": "a", "p": "/" }, { "v": 1, "n": "view", "id": "a" } ], "error": "missing p" }
+]
