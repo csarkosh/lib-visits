@@ -30,7 +30,7 @@ pub fn decorate(mut event: Event, facts: &RequestFacts) -> Event {
         },
     };
     let lg = if event.fields.contains_key("lg") { None } else {
-        facts.accept_language.and_then(|al| al.split(',').next()).map(|t| t.split(';').next().unwrap_or("").trim().to_string()).filter(|t| !t.is_empty() && t != "*")
+        facts.accept_language.and_then(|al| al.split(',').next()).map(|t| t.split(';').next().unwrap_or("").trim().to_string()).filter(|t| (1..=35).contains(&t.len()) && t.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-'))
     };
     let visit = match (facts.secret, facts.ip) {
         (Some(secret), Some(ip)) => Some(visit_hash(secret, facts.unix_secs, ip, ua)),
@@ -62,6 +62,14 @@ mod tests {
     fn wildcard_language_gives_no_lg() {
         let event: Event = serde_json::from_str(r#"{"v":1,"n":"view","id":"a","p":"/"}"#).unwrap();
         let facts = RequestFacts { unix_secs: 0, ip: None, user_agent: None, origin_host: "x.com", accept_language: Some("*"), sec_ch_ua: None, sec_ch_ua_platform: None, country: None, secret: None };
+        assert_eq!(decorate(event, &facts).s.unwrap().lg, None);
+    }
+
+    #[test]
+    fn an_overlong_language_gives_no_lg() {
+        let event: Event = serde_json::from_str(r#"{"v":1,"n":"view","id":"a","p":"/"}"#).unwrap();
+        let long = "a".repeat(300);
+        let facts = RequestFacts { unix_secs: 0, ip: None, user_agent: None, origin_host: "x.com", accept_language: Some(&long), sec_ch_ua: None, sec_ch_ua_platform: None, country: None, secret: None };
         assert_eq!(decorate(event, &facts).s.unwrap().lg, None);
     }
 }

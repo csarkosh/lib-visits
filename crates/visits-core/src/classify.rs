@@ -9,7 +9,8 @@ fn major_after(ua: &str, token: &str) -> Option<u32> {
 
 /// Browser family and major version: client hints first, else the User-Agent.
 pub fn browser_of(ua: &str, ch_ua: Option<&str>) -> (String, Option<u32>) {
-    if let Some(hints) = ch_ua {
+    'hints: {
+        let Some(hints) = ch_ua else { break 'hints };
         let mut chromium = None;
         for part in hints.split(',') {
             let part = part.trim();
@@ -18,6 +19,7 @@ pub fn browser_of(ua: &str, ch_ua: Option<&str>) -> (String, Option<u32>) {
             if brand.is_empty() || brand.starts_with("Not") { continue; }
             if brand == "Chromium" { chromium = Some((brand, version)); continue; }
             let brand = match brand.as_str() { "Google Chrome" => "Chrome".to_string(), "Microsoft Edge" => "Edge".to_string(), _ => brand };
+            if brand.chars().count() > 32 { break 'hints; }
             return (brand, version);
         }
         if let Some(c) = chromium { return c; }
@@ -91,6 +93,13 @@ mod tests {
     fn hint_brands_are_normalised() {
         assert_eq!(browser_of("", Some("\"Google Chrome\";v=\"130\"")), ("Chrome".into(), Some(130)));
         assert_eq!(browser_of("", Some("\"Microsoft Edge\";v=\"130\"")), ("Edge".into(), Some(130)));
+    }
+
+    #[test]
+    fn an_overlong_hint_brand_falls_to_the_user_agent() {
+        let hints = format!("\"{}\";v=\"1\"", "x".repeat(300));
+        let ua = "Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0";
+        assert_eq!(browser_of(ua, Some(&hints)), ("Firefox".into(), Some(128)));
     }
 
     #[test]
