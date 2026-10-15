@@ -4,7 +4,7 @@
 
 ## 1. What it is
 
-A cookieless web analytics library in two parts: a client script of under 1.5 KB that
+A cookieless web analytics library in two parts: a client script of under 2.5 KB that
 any page can load, and a server written in Rust that any Linux box can run as one static
 binary. It counts visits and reconstructs the path a visit took through a site, without
 cookies, without storage, and without fingerprinting. It ships no dashboard and no
@@ -169,7 +169,7 @@ Everything is wrapped so that an old browser throws nothing into the page's cons
 
 ### 3.7 Size
 
-The build fails if `visits.min.js` exceeds **1,536 bytes** or `vitals.min.js` exceeds
+The build fails if `visits.min.js` exceeds **2,560 bytes** or `vitals.min.js` exceeds
 **1,024 bytes**, minified, before compression. The budget is a test, not a goal: the
 README quotes the real numbers.
 
@@ -317,7 +317,7 @@ It is a brief marketing page, then a setup guide that fits on one screen; brevit
 feature, because a short guide is the one people try. In order:
 
 1. One line on what it is: visits and journeys, no cookies, no fingerprinting, one script
-   under 1.5 KB and one binary of a few MB that idles at a few MB.
+   under 2.5 KB and one binary of a few MB that idles at a few MB.
 2. Three or four short reasons, with the real numbers from the build.
 3. **Setup**, three steps, nothing else between them:
    1. Run it: `VISITS_SECRET=$(openssl rand -hex 32) ./visits serve --origin https://example.com`

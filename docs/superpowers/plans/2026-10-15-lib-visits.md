@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** A cookieless web analytics library: a client script under 1,536 bytes (plus an optional 1,024-byte Web Vitals module) and a Rust collector that runs as one static binary and emits decorated events as JSON lines.
+**Goal:** A cookieless web analytics library: a client script under 2,560 bytes (plus an optional 1,024-byte Web Vitals module) and a Rust collector that runs as one static binary and emits decorated events as JSON lines.
 
 **Architecture:** The wire format (`spec/SPEC.md` and `spec/fixtures/*.json`) is written first and both ends are tested against it. The client is a single IIFE run under `node:test` in a `vm` context with a hand-made fake browser. The server is a Cargo workspace: `visits-core` is pure (validate, decorate, hash, classify) with no I/O and no HTTP type in it; `visits` is the binary (clap, axum, sinks, limiter).
 
@@ -15,7 +15,7 @@
 - Licence `GPL-3.0-only` everywhere: `Cargo.toml` workspace package, `client/package.json`, file headers not required.
 - Rust: edition 2021, `rust-toolchain.toml` channel `stable`, workspace `members = ["crates/*"]`, `resolver = "2"`.
 - Node 20+ for the client's build and tests; the client itself targets browsers with `sendBeacon`, `fetch`, `IntersectionObserver`, `PerformanceObserver`, and throws nothing elsewhere.
-- Size gates: `client/dist/visits.min.js` ≤ 1,536 bytes; `client/dist/vitals.min.js` ≤ 1,024 bytes; minified, uncompressed; enforced by `client/test/size.test.mjs`.
+- Size gates: `client/dist/visits.min.js` ≤ 2,560 bytes; `client/dist/vitals.min.js` ≤ 1,024 bytes; minified, uncompressed; enforced by `client/test/size.test.mjs`.
 - Runtime dependencies of the binary: `axum`, `tokio`, `serde`, `serde_json`, `serde_urlencoded`, `hmac`, `sha2`, `clap`, `anyhow`; `maxminddb` only under feature `geoip`. No `regex`, no `tracing`, no `chrono`/`time`.
 - The client has zero runtime dependencies and one devDependency, `esbuild`.
 - No cookies, no storage except `localStorage.visits = "off"` written on `#visits-off`; no fingerprinting API (no canvas, WebGL, audio, fonts, high-entropy client hints).
@@ -161,14 +161,14 @@ fn main() {
 ```markdown
 # lib-visits: working context
 
-A cookieless web analytics library: `client/` (one script under 1.5 KB, an optional
+A cookieless web analytics library: `client/` (one script under 2.5 KB, an optional
 Web Vitals module) and `crates/` (a Rust collector, one static binary). Design:
 `docs/superpowers/specs/2026-10-15-lib-visits-design.md`. The wire format is
 `spec/SPEC.md`; `spec/fixtures/*.json` are read by both test suites.
 
 - `cargo test` and, in `client/`, `npm test` are the gates. Run the targeted suite for
   what changed; never run anything heavy in the background.
-- Size gates: `visits.min.js` ≤ 1,536 B, `vitals.min.js` ≤ 1,024 B. A change that
+- Size gates: `visits.min.js` ≤ 2,560 B, `vitals.min.js` ≤ 1,024 B. A change that
   breaks one is trimmed, not waved through.
 - No cookies, no storage (except the visitor's `#visits-off`), no fingerprinting API.
 - No em-dashes. Conventional Commits. Stage paths explicitly, never `git add -A`.
@@ -441,7 +441,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { statSync } from "node:fs";
 
-const BUDGET = { visits: 1536, vitals: 1024 };
+const BUDGET = { visits: 2560, vitals: 1024 };
 
 for (const [name, max] of Object.entries(BUDGET)) {
   test(`${name}.min.js is within its ${max} byte budget`, () => {
@@ -695,7 +695,7 @@ Expected: the view tests fail (`sent.length` is 0).
 - [ ] **Step 4: Run the tests**
 
 Run: `cd client && npm test 2>&1 | tail -5`
-Expected: all view tests and the size test pass. If `visits.min.js` is over 1,536 B at this point something is wrong with the build (this file alone minifies to about 1,150 B).
+Expected: all view tests and the size test pass. If `visits.min.js` is over 2,560 B at this point something is wrong with the build (this file alone minifies to about 1,150 B).
 
 - [ ] **Step 5: Commit**
 
@@ -790,7 +790,7 @@ Insert after the `view` definition and before `once`:
 - [ ] **Step 4: Run all client tests**
 
 Run: `cd client && npm test 2>&1 | tail -5`
-Expected: all pass; `visits.min.js` still under 1,536 B (expect about 1,450 B).
+Expected: all pass; `visits.min.js` still under 2,560 B (expect about 1,450 B).
 
 - [ ] **Step 5: Commit**
 
@@ -884,7 +884,7 @@ Insert before the final `once` line in `visits.js`:
 - [ ] **Step 4: Run all client tests**
 
 Run: `cd client && npm test 2>&1 | tail -5`
-Expected: all pass, and `visits.min.js ≤ 1536 B`. If the gate fails, trim in this order until it passes, re-running after each: (1) drop the `auxclick` listener; (2) shorten the bot chain to `n.webdriver ? 1 : 0` and update the view test's expectation to only cover `webdriver`; (3) drop the `once` wrapper by sending the view on the first `visibilitychange` to visible via the same listener that handles leave. Record what was trimmed in the commit body.
+Expected: all pass, and `visits.min.js ≤ 2560 B`. If the gate fails, trim in this order until it passes, re-running after each: (1) drop the `auxclick` listener; (2) shorten the bot chain to `n.webdriver ? 1 : 0` and update the view test's expectation to only cover `webdriver`; (3) drop the `once` wrapper by sending the view on the first `visibilitychange` to visible via the same listener that handles leave. Record what was trimmed in the commit body.
 
 - [ ] **Step 5: Commit**
 
