@@ -20,6 +20,22 @@ test("a same-host link is not a click; a named element is, by its name", () => {
   assert.equal("u" in last(sent), false);
 });
 
+test("a named link to another host sends both its name and its url", () => {
+  const { sent, fire } = load();
+  fire("window", "click", { target: anchor("https://github.com/csarkosh?tab=repos", { visitsEvent: "out-github" }) });
+  assert.deepEqual(last(sent), { ...last(sent), n: "click", ev: "out-github", u: "https://github.com/csarkosh" });
+});
+
+test("every event carries the client's clock", () => {
+  const { sent, fire } = load();
+  const before = Date.now();
+  fire("window", "click", { target: anchor("https://github.com/csarkosh") });
+  for (const s of sent) {
+    const e = JSON.parse(s.body);
+    assert.ok(Number.isInteger(e.ts) && e.ts >= before - 1000 && e.ts <= Date.now(), `ts on ${e.n}`);
+  }
+});
+
 test("visits.send wraps the payload as d and refuses a bad name", () => {
   const { sent, ctx } = load();
   ctx.visits.send("vitals", { lcp: 1234 });

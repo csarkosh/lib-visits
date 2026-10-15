@@ -39,11 +39,12 @@ whose values are strings (≤ 200 chars), numbers or booleans.
 | `rm` `tp` `re` | boolean | | reduced motion, touch, reached the end |
 | `tz` | string | 64 | IANA timezone |
 | `lg` | string | 32 | language tag |
-| `b` | integer | | bot marker: 1 webdriver, 2 PhantomJS, 3 Nightmare, 4 Selenium |
+| `b` | integer | | bot marker: 1 webdriver (the client sends only this; 2 PhantomJS, 3 Nightmare, 4 Selenium are accepted from older clients) |
 | `e` | integer | | engaged seconds |
 | `sd` | integer | | max scroll depth 0 to 100 |
 | `ev` | string | 64 | the named event of a click |
-| `u` | string | 2048 | origin plus path of an outbound click |
+| `u` | string | 2048 | origin plus path of a click to another host; with `ev` when that link is also named |
+| `ts` | integer | | the client's clock at the event, milliseconds since the epoch (section 5) |
 | `d` | object | 10 keys | a custom event's payload |
 
 ## 3. The decoration `s`
@@ -59,7 +60,7 @@ Added by the collector beside the client's keys, never over them.
 | `bn` `bv` | browser family and major version (integer), or `other` and absent |
 | `os` | `Windows`, `macOS`, `iOS`, `Android`, `Linux`, `ChromeOS`, `other`; a platform hint outside this set is `other` |
 | `bot` | `true` when `b` is non-zero or the User-Agent contains (case-insensitive) one of: bot, crawl, spider, slurp, headless, lighthouse, pagespeed, gtmetrix, facebookexternalhit, preview |
-| `rk` | `direct` (no referrer), `internal` (referrer host equals `host`), `external` |
+| `rk` | `direct` (no referrer), `internal` (referrer host equals `host` or is a subdomain of it), `external` |
 | `rp` | internal only: the referrer's path |
 | `rh` | external only: the referrer's host, leading `www.` removed; absent when the referrer has no parseable `scheme://host` |
 | `lg` | first tag of `Accept-Language`, only when the event has no `lg` and the tag is 1 to 35 characters of letters, digits and hyphens |
@@ -92,4 +93,9 @@ it; a rotation ends every visit at that moment, which is the only cost.
 ## 5. JSON lines
 
 A sink receives one JSON object per line: the event's keys as received (unknown
-ones dropped) plus `s`. Key order is not significant.
+ones dropped), `s`, and `time`: the event's time as RFC 3339 with milliseconds,
+the event's own `ts` when that is within five minutes of receipt, else the time
+of receipt. Cloud Logging and most log agents read `time` as the entry's
+timestamp, so beacons that arrive together (after a cold start, say) keep their
+order; `s.at` stays the time of receipt in whole seconds. Key order is not
+significant.

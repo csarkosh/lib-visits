@@ -50,7 +50,7 @@ const KEYS: &[(&str, Kind)] = &[
     ("t", Kind::Str(200)), ("r", Kind::Str(2048)),
     ("us", Kind::Str(100)), ("um", Kind::Str(100)), ("uc", Kind::Str(100)), ("ut", Kind::Str(100)), ("uo", Kind::Str(100)), ("cr", Kind::Str(100)),
     ("nt", Kind::Str(16)), ("th", Kind::Str(8)), ("tz", Kind::Str(64)), ("lg", Kind::Str(32)), ("ev", Kind::Str(64)), ("u", Kind::Str(2048)),
-    ("sw", Kind::Int), ("sh", Kind::Int), ("vw", Kind::Int), ("vh", Kind::Int), ("b", Kind::Int), ("e", Kind::Int), ("sd", Kind::Int),
+    ("sw", Kind::Int), ("sh", Kind::Int), ("vw", Kind::Int), ("vh", Kind::Int), ("b", Kind::Int), ("e", Kind::Int), ("sd", Kind::Int), ("ts", Kind::Int),
     ("dpr", Kind::Num),
     ("rm", Kind::Bool), ("tp", Kind::Bool), ("re", Kind::Bool),
     ("d", Kind::Payload),
@@ -127,7 +127,7 @@ fn one(v: &Value) -> Result<Event, Invalid> {
             fields.insert(k.clone(), val.clone());
         }
     }
-    Ok(Event { v: 1, n, id, p, fields, s: None })
+    Ok(Event { v: 1, n, id, p, fields, s: None, time: None })
 }
 
 /// A POST body: one event or an array of at most `MAX_EVENTS`.

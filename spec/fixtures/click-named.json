@@ -1,7 +1,8 @@
 {
   "name": "a named click from a crawler, direct",
   "facts": { "unix_secs": 1792032000, "ip": "192.0.2.1", "user_agent": "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)", "origin_host": "example.com" },
-  "in": { "v": 1, "n": "click", "id": "zz", "p": "/", "ev": "out-github" },
-  "out": { "v": 1, "n": "click", "id": "zz", "p": "/", "ev": "out-github",
+  "in": { "v": 1, "n": "click", "id": "zz", "p": "/", "ts": 1792031997500, "ev": "out-github" },
+  "out": { "v": 1, "n": "click", "id": "zz", "p": "/", "ts": 1792031997500, "ev": "out-github",
+    "time": "2026-10-15T02:39:57.500Z",
     "s": { "sv": 1, "at": "2026-10-15T02:40:00Z", "host": "example.com", "bn": "other", "os": "other", "bot": true, "rk": "direct" } }
 }

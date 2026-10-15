@@ -15,7 +15,7 @@
   var id = Math.random().toString(36).slice(2, 12);
 
   var send = (name, data) => {
-    var e = Object.assign({ v: 1, n: name, id: id, p: p }, data);
+    var e = Object.assign({ v: 1, n: name, id: id, p: p, ts: Date.now() }, data);
     try {
       if (get) {
         if (e.d) e.d = JSON.stringify(e.d);
@@ -37,7 +37,7 @@
       sw: screen.width, sh: screen.height, vw: innerWidth, vh: innerHeight, dpr: +devicePixelRatio.toFixed(2),
       th: m('(prefers-color-scheme: dark)') ? 'dark' : 'light', rm: m('(prefers-reduced-motion: reduce)'), tp: n.maxTouchPoints > 0 || undefined,
       tz: Intl.DateTimeFormat().resolvedOptions().timeZone, lg: n.language,
-      b: (n.webdriver ? 1 : w.callPhantom || w._phantom ? 2 : w.__nightmare ? 3 : d.__selenium_unwrapped || d.__webdriver_evaluate ? 4 : 0) || undefined
+      b: n.webdriver ? 1 : undefined
     }, cp));
   } catch (e) {} };
   var vis = d.visibilityState == 'visible', t0 = Date.now(), eng = 0, sd = 0, re, lastJ = '';
@@ -57,9 +57,10 @@
   var click = ev => {
     var el = ev.target && ev.target.closest && ev.target.closest('a[href],[data-visits-event]');
     if (!el) return;
-    var name = el.dataset.visitsEvent;
-    if (name) send('click', { ev: name });
-    else if (el.host && el.host != l.host) send('click', { u: el.origin + el.pathname });
+    var name = el.dataset.visitsEvent, out = el.host && el.host != l.host, data = {};
+    if (name) data.ev = name;
+    if (out) data.u = el.origin + el.pathname;
+    if (name || out) send('click', data);
   };
   addEventListener('click', click, true); addEventListener('auxclick', click, true);
   w.visits = { send: (name, data) => { if (typeof name == 'string' && /^[a-z][a-z0-9_-]{0,31}$/.test(name)) send(name, { d: data }) }, id: id };
