@@ -13,8 +13,10 @@ fn every_fixture_decorates_to_its_out() {
         let facts = &f["facts"];
         let s = |k: &str| facts.get(k).and_then(Value::as_str);
         let event = validate_json(f["in"].to_string().as_bytes()).unwrap().remove(0);
+        let secs = facts["unix_secs"].as_u64().unwrap();
         let out = decorate(event, &RequestFacts {
-            unix_secs: facts["unix_secs"].as_u64().unwrap(),
+            unix_secs: secs,
+            unix_millis: facts.get("unix_millis").and_then(Value::as_u64).unwrap_or(secs * 1000),
             ip: s("ip"),
             user_agent: s("user_agent"),
             origin_host: s("origin_host").unwrap(),
@@ -68,6 +70,7 @@ fn an_unparseable_referrer_is_external_without_rh() {
     let facts = &f["facts"];
     let out = decorate(event, &RequestFacts {
         unix_secs: facts["unix_secs"].as_u64().unwrap(),
+        unix_millis: facts["unix_secs"].as_u64().unwrap() * 1000,
         ip: None,
         user_agent: None,
         origin_host: "example.com",

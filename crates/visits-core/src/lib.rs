@@ -9,7 +9,7 @@ pub mod validate;
 pub mod visit;
 
 pub use classify::{browser_of, host_key, is_crawler, os_of, split_referrer};
-pub use clock::{rfc3339, ymd};
+pub use clock::{rfc3339, rfc3339_ms, ymd};
 pub use decorate::{decorate, RequestFacts};
 pub use event::{Decoration, Event};
 pub use validate::{validate_json, validate_query, Invalid, MAX_EVENTS};

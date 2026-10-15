@@ -13,6 +13,11 @@ pub struct Event {
     pub fields: BTreeMap<String, serde_json::Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub s: Option<Decoration>,
+    /// The event's time, RFC 3339 with milliseconds (spec section 5): the
+    /// client's `ts` when it is near the time of receipt, else that time. Never
+    /// read from the wire.
+    #[serde(skip_deserializing, skip_serializing_if = "Option::is_none")]
+    pub time: Option<String>,
 }
 
 /// What the collector adds. `None` fields are left out of the line.

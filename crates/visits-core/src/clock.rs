@@ -21,9 +21,20 @@ pub fn rfc3339(unix_secs: u64) -> String {
     format!("{y:04}-{m:02}-{d:02}T{:02}:{:02}:{:02}Z", s / 3600, (s % 3600) / 60, s % 60)
 }
 
+/// The same instant with milliseconds: `2026-10-15T02:40:30.250Z`.
+pub fn rfc3339_ms(unix_ms: u64) -> String {
+    let whole = rfc3339(unix_ms / 1000);
+    format!("{}.{:03}Z", &whole[..whole.len() - 1], unix_ms % 1000)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn with_milliseconds() {
+        assert_eq!(rfc3339_ms(1_792_032_030_250), "2026-10-15T02:40:30.250Z");
+        assert_eq!(rfc3339_ms(0), "1970-01-01T00:00:00.000Z");
+    }
     #[test]
     fn known_dates() {
         assert_eq!(ymd(0), (1970, 1, 1));

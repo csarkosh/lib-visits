@@ -4,6 +4,7 @@ use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::sync::{Arc, Mutex};
 use visits::app::{router, AppState};
+use visits::ignore::IpNet;
 use visits::limiter::Limiter;
 use visits::sink::Sink;
 use visits_core::Event;
@@ -17,6 +18,10 @@ impl Sink for Capture {
 struct Server { addr: String, captured: Arc<Capture> }
 
 async fn start(secret: Option<&str>, trusted_proxies: usize) -> Server {
+    start_with(secret, trusted_proxies, vec![]).await
+}
+
+async fn start_with(secret: Option<&str>, trusted_proxies: usize, ignore: Vec<IpNet>) -> Server {
     let captured = Arc::new(Capture::default());
     let state = Arc::new(AppState {
         origins: ["https://example.com".to_string()].into_iter().collect(),
@@ -27,6 +32,7 @@ async fn start(secret: Option<&str>, trusted_proxies: usize) -> Server {
         trusted_proxies,
         log_ip: false,
         geoip: None,
+        ignore,
     });
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap().to_string();
@@ -122,6 +128,38 @@ async fn the_limiter_answers_429_after_the_burst_and_keys_unknown_addresses_toge
     assert!(srv.captured.0.lock().unwrap()[0].s.as_ref().unwrap().visit.is_none());
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn an_ignored_address_is_answered_and_dropped() {
+    let srv = start_with(Some("s"), 1, vec![IpNet::parse("203.0.113.0/24").unwrap(), IpNet::parse("2001:db8::/32").unwrap()]).await;
+    let four = [("Origin", "https://example.com"), ("X-Forwarded-For", "203.0.113.9")];
+    let six = [("Origin", "https://example.com"), ("X-Forwarded-For", "2001:db8:1::5")];
+    let other = [("Origin", "https://example.com"), ("X-Forwarded-For", "198.51.100.1")];
+    let (status, head, _) = request(&srv.addr, "POST", "/v", &four, VIEW);
+    assert_eq!(status, 204);
+    assert!(head.contains("access-control-allow-origin: https://example.com"));
+    assert_eq!(request(&srv.addr, "POST", "/v", &six, VIEW).0, 204);
+    assert!(srv.captured.0.lock().unwrap().is_empty(), "nothing written for an ignored address");
+    assert_eq!(request(&srv.addr, "POST", "/v", &other, VIEW).0, 204);
+    assert_eq!(srv.captured.0.lock().unwrap().len(), 1);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn the_line_time_is_the_client_clock_within_five_minutes_else_receipt() {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    use visits_core::rfc3339_ms;
+    let srv = start(None, 0).await;
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64;
+    let origin = [("Origin", "https://example.com")];
+    let near = format!(r#"{{"v":1,"n":"view","id":"a","p":"/","ts":{}}}"#, now - 4_000);
+    let far = format!(r#"{{"v":1,"n":"view","id":"b","p":"/","ts":{}}}"#, now - 3_600_000);
+    assert_eq!(request(&srv.addr, "POST", "/v", &origin, &near).0, 204);
+    assert_eq!(request(&srv.addr, "POST", "/v", &origin, &far).0, 204);
+    let got = srv.captured.0.lock().unwrap();
+    assert_eq!(got[0].time.as_deref(), Some(rfc3339_ms(now - 4_000).as_str()));
+    let receipt = got[1].time.as_deref().unwrap();
+    assert!(receipt >= rfc3339_ms(now - 1_000).as_str() && receipt <= rfc3339_ms(now + 60_000).as_str(), "{receipt}");
+}
+
 #[test]
 fn client_ip_counts_from_the_right() {
     use std::net::{IpAddr, Ipv4Addr};
@@ -156,6 +194,10 @@ async fn every_fixture_is_accepted_and_decorated() {
         assert_eq!(got.len(), 1, "{name}");
         let mut line = serde_json::to_value(&got[0]).unwrap();
         let mut want = f["out"].clone();
+        // The fixture's ts is years from now, so the line's time is the time of receipt.
+        let time = line["time"].as_str().unwrap_or_else(|| panic!("{name}: time"));
+        assert!(time.len() == 24 && time.ends_with('Z') && time != want["time"], "{name}: {time}");
+        line["time"] = want["time"].clone();
         let (ls, ws) = (line["s"].as_object_mut().unwrap(), want["s"].as_object_mut().unwrap());
         ls.insert("at".into(), ws["at"].clone());
         match ws.remove("visit") {

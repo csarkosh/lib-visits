@@ -15,6 +15,7 @@ fn every_valid_fixture_parses_and_keeps_only_known_keys() {
         let back = serde_json::to_value(&events[0]).unwrap();
         let mut expected = f["out"].clone();
         expected.as_object_mut().unwrap().remove("s");
+        expected.as_object_mut().unwrap().remove("time");
         assert_eq!(back, expected, "{name}: the event minus the decoration");
     }
 }

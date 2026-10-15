@@ -21,6 +21,8 @@ async fn serve(args: Serve) -> anyhow::Result<()> {
         anyhow::bail!("--path must start with / and not be /healthcheck, got {}", args.path);
     }
     let (burst, per_second) = args.limit_parts()?;
+    let ignore = visits::ignore::parse_list(&args.ignore_ips).map_err(|e| anyhow::anyhow!("--ignore-ips: {e}"))?;
+    if !ignore.is_empty() { eprintln!("visits: dropping beacons from {} ignored address range(s)", ignore.len()); }
     let geoip = load_geoip(args.geoip.as_deref())?;
     let state = Arc::new(AppState {
         origins: args.origin.iter().map(|o| o.trim_end_matches('/').to_string()).collect::<HashSet<_>>(),
@@ -31,6 +33,7 @@ async fn serve(args: Serve) -> anyhow::Result<()> {
         trusted_proxies: args.trusted_proxies,
         log_ip: args.log_ip,
         geoip,
+        ignore,
     });
     let listener = tokio::net::TcpListener::bind(&args.listen).await?;
     eprintln!("visits: listening on {} for {} from {}", args.listen, args.path, args.origin.join(", "));

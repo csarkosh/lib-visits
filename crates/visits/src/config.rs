@@ -43,6 +43,9 @@ pub struct Serve {
     /// Setup only: print each request's resolved address to stderr.
     #[arg(long)]
     pub log_ip: bool,
+    /// Addresses whose beacons are dropped, as addresses or CIDR prefixes (repeatable; env: comma-separated).
+    #[arg(long = "ignore-ips", env = "VISITS_IGNORE_IPS", value_delimiter = ',')]
+    pub ignore_ips: Vec<String>,
 }
 
 impl Serve {
@@ -60,7 +63,7 @@ impl Serve {
 mod tests {
     use super::*;
     fn serve(limit: &str) -> Serve {
-        Serve { listen: String::new(), path: "/v".into(), origin: vec![], secret_env: String::new(), sink: "stdout".into(), geoip: None, trusted_proxies: 0, limit: limit.into(), log_ip: false }
+        Serve { listen: String::new(), path: "/v".into(), origin: vec![], secret_env: String::new(), sink: "stdout".into(), geoip: None, trusted_proxies: 0, limit: limit.into(), log_ip: false, ignore_ips: vec![] }
     }
     #[test]
     fn limit_parts_validates() {

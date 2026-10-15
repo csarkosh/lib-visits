@@ -1,5 +1,6 @@
 //! The router: the beacon route, the health route, and the checks in order:
 //! method, origin, address and limiter, body, then decorate and sink.
+use crate::ignore::IpNet;
 use crate::limiter::Limiter;
 use crate::sink::Sink;
 use axum::body::Bytes;
@@ -34,6 +35,8 @@ pub struct AppState {
     pub trusted_proxies: usize,
     pub log_ip: bool,
     pub geoip: Option<GeoIp>,
+    /// Beacons from these ranges are answered 204 and never written.
+    pub ignore: Vec<IpNet>,
 }
 
 pub fn router(state: Arc<AppState>) -> Router {
@@ -73,6 +76,14 @@ fn host_of(origin: &str) -> &str {
     origin.split("://").nth(1).unwrap_or(origin)
 }
 
+/// The beacon's answer: 204, no-store, the origin allowed.
+fn taken(origin: &str) -> Response {
+    let mut res = StatusCode::NO_CONTENT.into_response();
+    res.headers_mut().insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    if let Ok(v) = HeaderValue::from_str(origin) { res.headers_mut().insert(header::ACCESS_CONTROL_ALLOW_ORIGIN, v); }
+    res
+}
+
 fn refuse(status: StatusCode, reason: &str) -> Response {
     let body = serde_json::json!({ "error": reason }).to_string();
     (status, [(header::CACHE_CONTROL, "no-store"), (header::CONTENT_TYPE, "application/json")], body).into_response()
@@ -96,6 +107,7 @@ async fn beacon(
         eprintln!("visits: X-Forwarded-For has fewer entries than --trusted-proxies; every visitor is sharing one bucket and no visit is computed. Check the proxy depth with --log-ip.");
     }
     if state.log_ip { eprintln!("visits: request from {}", ip.map(|i| i.to_string()).unwrap_or_else(|| "unknown".into())); }
+    if ip.is_some_and(|i| state.ignore.iter().any(|n| n.contains(i))) { return taken(&origin); }
     let key = ip.map(|i| i.to_string()).unwrap_or_else(|| "unknown".into());
     if !state.limiter.lock().map(|mut l| l.allow(&key)).unwrap_or(true) {
         return (StatusCode::TOO_MANY_REQUESTS, [(header::CACHE_CONTROL, "no-store"), (header::RETRY_AFTER, "1")]).into_response();
@@ -108,9 +120,10 @@ async fn beacon(
     };
     let ip_text = ip.map(|i| i.to_string());
     let country = ip.and_then(|i| country_of(&state, i));
-    let now = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+    let now_ms = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0);
     let facts = RequestFacts {
-        unix_secs: now,
+        unix_secs: now_ms / 1000,
+        unix_millis: now_ms,
         ip: ip_text.as_deref(),
         user_agent: h("user-agent"),
         origin_host: host_of(&origin),
@@ -122,10 +135,7 @@ async fn beacon(
     };
     let decorated: Vec<_> = events.into_iter().map(|e| decorate(e, &facts)).collect();
     if let Err(err) = state.sink.write(&decorated) { eprintln!("visits: sink failed: {err}"); }
-    let mut res = StatusCode::NO_CONTENT.into_response();
-    res.headers_mut().insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
-    if let Ok(v) = HeaderValue::from_str(&origin) { res.headers_mut().insert(header::ACCESS_CONTROL_ALLOW_ORIGIN, v); }
-    res
+    taken(&origin)
 }
 
 #[cfg(feature = "geoip")]
