@@ -179,19 +179,22 @@ fn only(allow: &'static str) -> Response {
     (StatusCode::METHOD_NOT_ALLOWED, [(header::CACHE_CONTROL, "no-store"), (header::ALLOW, allow)]).into_response()
 }
 
-/// A program's request carries no `Origin`, and its agent is `<app>/<rest>`
-/// with `<app>` one the collector allows. Answers that app, else the refusal
+/// A program's request carries no `Origin`, and its agent is `<app>/<version>`,
+/// optionally followed by a space and anything, with `<app>` one the collector
+/// allows and `<version>` not empty. Answers that app, else the refusal
 /// (boxed, as a `Response` is large for an `Err`).
 fn gate(headers: &HeaderMap, apps: &BTreeMap<String, Option<String>>) -> Result<String, Box<Response>> {
     if headers.contains_key(header::ORIGIN) { return Err(Box::new(refuse(StatusCode::FORBIDDEN, "origin not allowed for reports"))); }
     let agent = headers.get(header::USER_AGENT).and_then(|v| v.to_str().ok()).unwrap_or("");
     match agent.split_once('/') {
-        Some((app, _)) if apps.contains_key(app) => Ok(app.to_string()),
+        Some((app, rest)) if apps.contains_key(app) && !rest.is_empty() && !rest.starts_with(' ') => Ok(app.to_string()),
         _ => Err(Box::new(refuse(StatusCode::FORBIDDEN, "app not allowed"))),
     }
 }
 
 /// A validated report or check from the agent's own app, not from a source build.
+/// The `source` arm is defence in depth: core already refuses every source
+/// report with `Invalid::Channel`.
 fn admit(parsed: Result<AppReport, Invalid>, app: &str) -> Result<AppReport, Box<Response>> {
     let refusal = match parsed {
         Err(Invalid::Channel) => refuse(StatusCode::FORBIDDEN, "source channel"),
@@ -204,7 +207,7 @@ fn admit(parsed: Result<AppReport, Invalid>, app: &str) -> Result<AppReport, Box
 }
 
 /// Decorates and writes a report; a sink's failure is printed, not answered.
-fn write_report(state: &AppState, r: AppReport) {
+fn record(state: &AppState, r: AppReport) {
     let now_ms = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0);
     if let Err(err) = state.sink.write_report(&decorate_report(r, now_ms)) { eprintln!("visits: sink failed: {err}"); }
 }
@@ -227,7 +230,7 @@ async fn report(
     if let Some(res) = limited(&state, ip) { return res; }
     let app = match gate(&headers, &state.apps) { Ok(a) => a, Err(res) => return *res };
     match admit(validate_report(&body), &app) {
-        Ok(r) => write_report(&state, r),
+        Ok(r) => record(&state, r),
         Err(res) => return *res,
     }
     no_content()
@@ -247,7 +250,7 @@ async fn check(
     if let Some(res) = limited(&state, ip) { return res; }
     let app = match gate(&headers, &state.apps) { Ok(a) => a, Err(res) => return *res };
     let r = match admit(validate_check(query.as_deref().unwrap_or("")), &app) { Ok(r) => r, Err(res) => return *res };
-    if !ignored(&state, ip) { write_report(&state, r); }
+    if !ignored(&state, ip) { record(&state, r); }
     match state.apps.get(&app).cloned().flatten().and_then(|to| HeaderValue::from_str(&to).ok()) {
         Some(to) => (StatusCode::FOUND, [(header::CACHE_CONTROL, HeaderValue::from_static("no-store")), (header::LOCATION, to)]).into_response(),
         None => no_content(),

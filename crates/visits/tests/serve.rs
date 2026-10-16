@@ -282,11 +282,11 @@ async fn a_report_is_written_with_its_decoration_and_nothing_about_the_request()
     for absent in ["203.0.113.9", ARKOS_UA, "visit", "host", "cc", "bn"] {
         assert!(!line.contains(absent), "{absent} in {line}");
     }
-    let mut want: serde_json::Value = serde_json::from_str(&session()).unwrap();
+    let want: serde_json::Value = serde_json::from_str(&session()).unwrap();
     let mut line: serde_json::Value = serde_json::from_str(&line).unwrap();
     let decoration = line.as_object_mut().unwrap();
     assert!(decoration.remove("s").is_some() && decoration.remove("time").is_some());
-    assert_eq!(line, want.take(), "the report's keys, s and time, nothing else");
+    assert_eq!(line, want, "the report's keys, s and time, nothing else");
     assert!(srv.captured.events.lock().unwrap().is_empty());
 }
 
@@ -332,7 +332,7 @@ async fn the_gate_refuses_an_origin_and_any_agent_but_the_reports_own() {
     assert_eq!((status, body.as_str()), (403, r#"{"error":"origin not allowed for reports"}"#));
     let (status, _, body) = request(&srv.addr, "GET", &check, &with_origin, "");
     assert_eq!((status, body.as_str()), (403, r#"{"error":"origin not allowed for reports"}"#));
-    for agent in ["other/1.0.0", "arkos", "Mozilla/5.0 (Macintosh)", "zed/1.0.0"] {
+    for agent in ["other/1.0.0", "arkos", "arkos/", "arkos/ x", "arkos/ (macOS)", "Mozilla/5.0 (Macintosh)", "zed/1.0.0"] {
         let (status, _, body) = request(&srv.addr, "POST", "/a", &[("User-Agent", agent)], &session());
         assert_eq!((status, body.as_str()), (403, r#"{"error":"app not allowed"}"#), "POST {agent}");
         let (status, _, body) = request(&srv.addr, "GET", &check, &[("User-Agent", agent)], "");
