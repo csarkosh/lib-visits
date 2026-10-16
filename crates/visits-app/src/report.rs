@@ -178,6 +178,17 @@ pub enum DValue {
 }
 
 impl DValue {
+    /// Reads a `d` value back: a string, a boolean or an integer that fits an
+    /// `i64`; anything else is `None`.
+    pub fn from_wire(v: &Value) -> Option<DValue> {
+        match v {
+            Value::String(s) => Some(DValue::Str(s.clone())),
+            Value::Bool(b) => Some(DValue::Bool(*b)),
+            Value::Number(n) => n.as_i64().map(DValue::Int),
+            _ => None,
+        }
+    }
+
     fn to_value(&self) -> Value {
         match self {
             DValue::Str(s) => Value::from(s.as_str()),
@@ -218,13 +229,7 @@ impl Event {
         let mut d = BTreeMap::new();
         if let Some(map) = v.get("d") {
             for (k, v) in map.as_object()? {
-                let value = match v {
-                    Value::String(s) => DValue::Str(s.clone()),
-                    Value::Bool(b) => DValue::Bool(*b),
-                    Value::Number(i) => DValue::Int(i.as_i64()?),
-                    _ => return None,
-                };
-                d.insert(k.clone(), value);
+                d.insert(k.clone(), DValue::from_wire(v)?);
             }
         }
         Some(Event { n, t, d })
@@ -246,6 +251,16 @@ impl End {
             End::Quit => "quit",
             End::Lost => "lost",
             End::Unknown => "unknown",
+        }
+    }
+
+    /// Reads the wire spelling back; anything else is `None`.
+    pub fn from_wire(s: &str) -> Option<End> {
+        match s {
+            "quit" => Some(End::Quit),
+            "lost" => Some(End::Lost),
+            "unknown" => Some(End::Unknown),
+            _ => None,
         }
     }
 }
@@ -276,6 +291,32 @@ impl Session {
         }
     }
 
+    /// Reads a session report back from its wire bytes. The bytes pass the
+    /// collector's own checks first (a source channel is allowed, as `to_bytes`
+    /// allows it), so anything it would refuse is refused here with its reason,
+    /// and a report of another kind is `Invalid::Kind`.
+    pub fn from_bytes(bytes: &[u8]) -> Result<Session, Invalid> {
+        let m = validated(bytes, "session")?;
+        let num = |k: &str| m.get(k).and_then(Value::as_u64);
+        let counts = |k: &str| num(k).unwrap_or(0);
+        let focus = m.get("focus").and_then(Value::as_object).ok_or(WALKED)?;
+        let focus = focus.iter().map(|(k, v)| Some((k.clone(), v.as_u64()?))).collect::<Option<_>>().ok_or(WALKED)?;
+        let ev = m.get("ev").and_then(Value::as_array).ok_or(WALKED)?;
+        let ev = ev.iter().map(Event::from_value).collect::<Option<_>>().ok_or(WALKED)?;
+        Ok(Session {
+            env: Envelope::from_map(&m).ok_or(WALKED)?,
+            sid: text(&m, "sid")?,
+            len: num("len").ok_or(WALKED)?,
+            end: End::from_wire(&text(&m, "end")?).ok_or(WALKED)?,
+            iw: m.get("iw").and_then(Value::as_i64).ok_or(WALKED)?,
+            rd: m.get("rd").and_then(Value::as_i64).ok_or(WALKED)?,
+            focus,
+            ev,
+            ev_dropped: counts("ev_dropped"),
+            ev_rejected: counts("ev_rejected"),
+        })
+    }
+
     /// The exact bytes that go on the wire, refused with the collector's own
     /// reason when any field breaks section 6.
     pub fn to_bytes(&self) -> Result<Vec<u8>, Invalid> {
@@ -294,6 +335,10 @@ impl Session {
     }
 }
 
+/// What a report validated by the collector's own walk must hold; reaching this
+/// is a bug in the walk, not in the bytes.
+const WALKED: Invalid = Invalid::Json;
+
 /// What ended the process.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum CrashKind {
@@ -307,6 +352,15 @@ impl CrashKind {
         match self {
             CrashKind::Panic => "panic",
             CrashKind::Signal => "signal",
+        }
+    }
+
+    /// Reads the wire spelling back; anything else is `None`.
+    pub fn from_wire(s: &str) -> Option<CrashKind> {
+        match s {
+            "panic" => Some(CrashKind::Panic),
+            "signal" => Some(CrashKind::Signal),
+            _ => None,
         }
     }
 }
@@ -332,6 +386,18 @@ impl Uptime {
             Uptime::Ge1d => ">=1d",
         }
     }
+
+    /// Reads the wire spelling back; anything else is `None`.
+    pub fn from_wire(s: &str) -> Option<Uptime> {
+        match s {
+            "<1m" => Some(Uptime::Lt1m),
+            "<10m" => Some(Uptime::Lt10m),
+            "<1h" => Some(Uptime::Lt1h),
+            "<1d" => Some(Uptime::Lt1d),
+            ">=1d" => Some(Uptime::Ge1d),
+            _ => None,
+        }
+    }
 }
 
 /// The memory pressure the system reported at the crash.
@@ -351,6 +417,17 @@ impl Memory {
             Memory::Warn => "warn",
             Memory::Critical => "critical",
             Memory::Unknown => "unknown",
+        }
+    }
+
+    /// Reads the wire spelling back; anything else is `None`.
+    pub fn from_wire(s: &str) -> Option<Memory> {
+        match s {
+            "normal" => Some(Memory::Normal),
+            "warn" => Some(Memory::Warn),
+            "critical" => Some(Memory::Critical),
+            "unknown" => Some(Memory::Unknown),
+            _ => None,
         }
     }
 }
@@ -375,6 +452,35 @@ pub struct Crash {
 }
 
 impl Crash {
+    /// Reads a crash report back from its wire bytes, as `Session::from_bytes`
+    /// reads a session: validated first, a source channel allowed, and a report
+    /// of another kind `Invalid::Kind`.
+    pub fn from_bytes(bytes: &[u8]) -> Result<Crash, Invalid> {
+        let m = validated(bytes, "crash")?;
+        let pair = |v: &Value| Some((u32::try_from(v.get(0)?.as_u64()?).ok()?, v.get(1)?.as_u64()?));
+        let frames = m.get("frames").and_then(Value::as_array).ok_or(WALKED)?;
+        let frames = frames.iter().map(pair).collect::<Option<_>>().ok_or(WALKED)?;
+        let triple = |v: &Value| Some((v.get(0)?.as_str()?.to_string(), v.get(1)?.as_str()?.to_string(), v.get(2)?.as_u64()?));
+        let images = m.get("images").and_then(Value::as_array).ok_or(WALKED)?;
+        let images = images.iter().map(triple).collect::<Option<_>>().ok_or(WALKED)?;
+        let small = |k: &str| m.get(k).and_then(Value::as_u64).and_then(|n| u32::try_from(n).ok());
+        Ok(Crash {
+            env: Envelope::from_map(&m).ok_or(WALKED)?,
+            inc: text(&m, "inc")?,
+            ck: CrashKind::from_wire(&text(&m, "ck")?).ok_or(WALKED)?,
+            commit: text(&m, "commit")?,
+            pk: text(&m, "pk")?,
+            mh: m.get("mh").and_then(Value::as_str).map(str::to_string),
+            file: text(&m, "file")?,
+            line: small("line").ok_or(WALKED)?,
+            frames,
+            images,
+            sig: small("sig"),
+            up: Uptime::from_wire(&text(&m, "up")?).ok_or(WALKED)?,
+            mem: m.get("mem").and_then(Value::as_str).map(|s| Memory::from_wire(s).ok_or(WALKED)).transpose()?,
+        })
+    }
+
     /// The exact bytes that go on the wire, refused with the collector's own
     /// reason when any field breaks section 6.
     pub fn to_bytes(&self) -> Result<Vec<u8>, Invalid> {
@@ -439,6 +545,35 @@ fn allow_source<T>(result: Result<T, Invalid>) -> Result<(), Invalid> {
         Ok(_) | Err(Invalid::Channel) => Ok(()),
         Err(e) => Err(e),
     }
+}
+
+/// Validates a report's bytes, a source channel allowed, and returns the
+/// checked fields when `k` is `kind`; another kind is `Invalid::Kind`.
+fn validated(bytes: &[u8], kind: &str) -> Result<Map<String, Value>, Invalid> {
+    let fields = match validate_report(bytes) {
+        Ok(r) => r.fields,
+        // The walk has no fields to give for a source report, so it is read again without the channel check.
+        Err(Invalid::Channel) => source_fields(bytes)?,
+        Err(e) => return Err(e),
+    };
+    if fields.get("k").and_then(Value::as_str) == Some(kind) { Ok(fields) } else { Err(Invalid::Kind) }
+}
+
+/// The fields of a report that is valid but for its source channel: the same
+/// bytes with `ch` set to a release channel pass the walk, which checked every
+/// other key.
+fn source_fields(bytes: &[u8]) -> Result<Map<String, Value>, Invalid> {
+    let mut v: Value = serde_json::from_slice(bytes).map_err(|_| Invalid::Json)?;
+    let obj = v.as_object_mut().ok_or(Invalid::Json)?;
+    obj.insert("ch".into(), Value::from("release"));
+    let mut fields = validate_report(&serde_json::to_vec(&v).map_err(|_| Invalid::Json)?)?.fields;
+    fields.insert("ch".into(), Value::from("source"));
+    Ok(fields)
+}
+
+/// A string field of a validated report.
+fn text(m: &Map<String, Value>, key: &str) -> Result<String, Invalid> {
+    m.get(key).and_then(Value::as_str).map(str::to_string).ok_or(WALKED)
 }
 
 /// Serializes a report and validates the very bytes it returns.

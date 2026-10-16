@@ -4,7 +4,7 @@ use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use visits_app::{seal, seal_stale, Allowlist, Arch, Channel, DValue, End, Envelope, Event, Journal, Os, Session, State};
+use visits_app::{seal, seal_stale, seal_stale_except, Allowlist, Arch, Channel, DValue, End, Envelope, Event, Journal, Os, Session, State};
 
 const SID: &str = "3f9a1c27b84d5e60";
 const DAY: u64 = 86_400;
@@ -498,5 +498,23 @@ fn update_loads_changes_and_saves_the_state() {
     .unwrap();
     assert_eq!(got.unwrap(), None, "the closure's own result comes back");
     assert_eq!(State::load(&dir), State { sent: 2, rejected: 2, ..State::default() });
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn seal_stale_except_leaves_the_excepted_journal_alone() {
+    let dir = scratch("stale-except");
+    let now = NOON + 30 * DAY;
+    let kept = write_journal(&dir, "aaaaaaaaaaaaaaaa", &four_events_two_marks(NOON));
+    write_journal(&dir, "ffffffffffffffff", &four_events_two_marks(NOON));
+    let mut state = State::default();
+
+    let sealed = seal_stale_except(&dir, now, DAY, &["aaaaaaaaaaaaaaaa"], &mut state).unwrap();
+
+    let names: Vec<_> = sealed.iter().map(|p| p.file_name().unwrap().to_string_lossy().into_owned()).collect();
+    assert_eq!(names, ["session-ffffffffffffffff.json"]);
+    assert!(kept.exists(), "the excepted journal stays");
+    assert!(!dir.join("queue").join("session-aaaaaaaaaaaaaaaa.json").exists());
+
     std::fs::remove_dir_all(&dir).unwrap();
 }

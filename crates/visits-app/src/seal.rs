@@ -198,6 +198,13 @@ pub fn seal(dir: &Path, sid: &str, end: End, now: u64, state: &mut State) -> io:
 /// instance may be between creating it and writing its first line. A file that
 /// cannot be read, or that is not `<sid>.jsonl`, is left alone.
 pub fn seal_stale(dir: &Path, now: u64, older_than_secs: u64, state: &mut State) -> io::Result<Vec<PathBuf>> {
+    seal_stale_except(dir, now, older_than_secs, &[], state)
+}
+
+/// `seal_stale`, leaving alone every journal whose `sid` is in `except`: a
+/// program's resident part skips the windows still connected, since a sleeping
+/// machine makes a live journal look stale.
+pub fn seal_stale_except(dir: &Path, now: u64, older_than_secs: u64, except: &[&str], state: &mut State) -> io::Result<Vec<PathBuf>> {
     let entries = match fs::read_dir(dir.join("journal")) {
         Ok(entries) => entries,
         Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
@@ -209,7 +216,7 @@ pub fn seal_stale(dir: &Path, now: u64, older_than_secs: u64, state: &mut State)
         let entry = entry?;
         let name = entry.file_name();
         let Some(sid) = name.to_str().and_then(|n| n.strip_suffix(".jsonl")) else { continue };
-        if !is_hex(sid, 16, 32) {
+        if !is_hex(sid, 16, 32) || except.contains(&sid) {
             continue;
         }
         let Ok(bytes) = fs::read(entry.path()) else { continue };

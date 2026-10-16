@@ -593,3 +593,17 @@ fn a_drain_posts_each_due_file_once_with_its_own_answer() {
     assert_eq!((state.sent, state.rejected), (1, 1));
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+#[test]
+fn a_crash_read_back_from_an_incident_file_is_requeued() {
+    let dir = scratch("requeue");
+    let original = crash("a41c0e9d7b3258f6");
+    let incident = dir.join("incident.json");
+    std::fs::write(&incident, original.to_bytes().unwrap()).unwrap();
+    let read = Crash::from_bytes(&std::fs::read(&incident).unwrap()).unwrap();
+    assert_eq!(read, original);
+    let path = Queue::new(&dir).enqueue_crash(&read, NOW).unwrap();
+    assert_eq!(std::fs::read(&path).unwrap(), original.to_bytes().unwrap());
+    assert_eq!(retry_of(&path), json!({ "first": NOW, "attempts": 0, "next": NOW }));
+    std::fs::remove_dir_all(&dir).unwrap();
+}

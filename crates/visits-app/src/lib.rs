@@ -155,7 +155,7 @@ pub use journal::Journal;
 pub use mode::{mode, Crashes, Mode, Settings, Usage};
 pub use queue::{Outcome, Queue, Transport};
 pub use report::{Arch, Channel, Check, Crash, CrashKind, DValue, End, Envelope, Event, Memory, Os, Session, Uptime};
-pub use seal::{seal, seal_stale};
+pub use seal::{seal, seal_stale, seal_stale_except};
 pub use state::State;
 pub use view::{payload_of, view, View};
 pub use visits_core::Invalid;

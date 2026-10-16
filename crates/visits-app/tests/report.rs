@@ -288,3 +288,92 @@ fn the_wire_spellings_read_back_into_the_enums() {
     assert_eq!(Channel::from_wire("source"), Channel::Source);
     assert_eq!(Channel::from_wire("tap"), Channel::Named("tap".into()));
 }
+
+fn fixture_bytes(name: &str) -> Vec<u8> {
+    serde_json::to_vec(&fixture(name)).unwrap()
+}
+
+#[test]
+fn the_session_fixture_reads_back_and_round_trips() {
+    let bytes = fixture_bytes("session");
+    let read = Session::from_bytes(&bytes).unwrap();
+    assert_eq!(read, session());
+    assert_eq!(as_value(&read.to_bytes().unwrap()), fixture("session"));
+}
+
+#[test]
+fn the_crash_fixture_reads_back_and_round_trips() {
+    let bytes = fixture_bytes("crash");
+    let read = Crash::from_bytes(&bytes).unwrap();
+    assert_eq!(read, crash());
+    assert_eq!(as_value(&read.to_bytes().unwrap()), fixture("crash"));
+}
+
+#[test]
+fn a_report_of_the_other_kind_is_the_wrong_kind() {
+    assert_eq!(Session::from_bytes(&fixture_bytes("crash")), Err(Invalid::Kind));
+    assert_eq!(Crash::from_bytes(&fixture_bytes("session")), Err(Invalid::Kind));
+}
+
+#[test]
+fn a_source_session_and_crash_round_trip() {
+    let mut s = session();
+    s.env.ch = Channel::Source;
+    let bytes = s.to_bytes().unwrap();
+    assert_eq!(Session::from_bytes(&bytes).unwrap(), s);
+    let mut c = crash();
+    c.env.ch = Channel::Source;
+    let bytes = c.to_bytes().unwrap();
+    assert_eq!(Crash::from_bytes(&bytes).unwrap(), c);
+}
+
+#[test]
+fn a_signal_crash_without_options_round_trips() {
+    let mut c = crash();
+    c.ck = CrashKind::Signal;
+    c.sig = Some(11);
+    c.mh = None;
+    c.mem = None;
+    c.up = Uptime::Ge1d;
+    assert_eq!(Crash::from_bytes(&c.to_bytes().unwrap()).unwrap(), c);
+}
+
+#[test]
+fn every_end_and_d_value_reads_back() {
+    for end in [End::Quit, End::Lost, End::Unknown] {
+        assert_eq!(End::from_wire(end.as_str()), Some(end));
+    }
+    for k in [CrashKind::Panic, CrashKind::Signal] {
+        assert_eq!(CrashKind::from_wire(k.as_str()), Some(k));
+    }
+    for up in [Uptime::Lt1m, Uptime::Lt10m, Uptime::Lt1h, Uptime::Lt1d, Uptime::Ge1d] {
+        assert_eq!(Uptime::from_wire(up.as_str()), Some(up));
+    }
+    for m in [Memory::Normal, Memory::Warn, Memory::Critical, Memory::Unknown] {
+        assert_eq!(Memory::from_wire(m.as_str()), Some(m));
+    }
+    assert_eq!(End::from_wire("gone"), None);
+    assert_eq!(Uptime::from_wire("1m"), None);
+    let mut s = session();
+    s.ev = vec![event("sync", 3, &[("ok", DValue::Bool(false)), ("delta", DValue::Int(-4)), ("id", DValue::Str("x".into()))])];
+    assert_eq!(Session::from_bytes(&s.to_bytes().unwrap()).unwrap(), s);
+    assert_eq!(DValue::from_wire(&serde_json::json!(-4)), Some(DValue::Int(-4)));
+    assert_eq!(DValue::from_wire(&serde_json::json!(1.5)), None);
+}
+
+#[test]
+fn malformed_bytes_are_invalid_json() {
+    assert_eq!(Session::from_bytes(b"{not json"), Err(Invalid::Json));
+    assert_eq!(Crash::from_bytes(b"[]"), Err(Invalid::Json));
+}
+
+#[test]
+fn a_report_with_an_unknown_key_is_unknown() {
+    let mut v = fixture("session");
+    v["extra"] = serde_json::json!(1);
+    let err = Session::from_bytes(&serde_json::to_vec(&v).unwrap()).unwrap_err();
+    assert_eq!(err, Invalid::Unknown("extra".into()));
+    let mut v = fixture("crash");
+    v["extra"] = serde_json::json!(1);
+    assert_eq!(Crash::from_bytes(&serde_json::to_vec(&v).unwrap()), Err(Invalid::Unknown("extra".into())));
+}
