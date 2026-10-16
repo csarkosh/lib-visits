@@ -218,3 +218,14 @@ fn a_repeated_unknown_query_key_is_named_as_unknown() {
     let q = fixture("check")["query"].as_str().unwrap().to_string();
     assert_eq!(validate_check(&format!("{q}&zz=1&zz=2")), Err(Invalid::Unknown("zz".into())));
 }
+
+#[test]
+fn the_public_matchers_are_the_walks_own() {
+    use visits_core::app::{is_hex, is_name, is_value};
+    assert!(is_name("pane_open") && is_name("a") && is_name(&"a".repeat(32)));
+    assert!(!is_name("") && !is_name("Pane") && !is_name("1a") && !is_name("pane-open") && !is_name(&"a".repeat(33)));
+    assert!(is_value("") && is_value("a/b:c.d-e_F9") && is_value(&"a".repeat(64)));
+    assert!(!is_value("a b") && !is_value("a+b") && !is_value(&"a".repeat(65)));
+    assert!(is_hex("3f9a1c27b84d5e60", 16, 32) && is_hex(&"a".repeat(32), 16, 32));
+    assert!(!is_hex("3F9A1C27B84D5E60", 16, 32) && !is_hex("../x", 16, 32) && !is_hex(&"a".repeat(33), 16, 32));
+}

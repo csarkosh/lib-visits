@@ -174,6 +174,23 @@ fn hex(s: &str, min: usize, max: usize) -> bool {
     (min..=max).contains(&s.len()) && s.bytes().all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c))
 }
 
+/// Whether `s` is a name as section 6.6 has it (`^[a-z][a-z0-9_]{0,31}$`): an
+/// event's `n`, a `d` key or a `focus` key. The client crate checks a program's
+/// allowlist with it, so the allowlist cannot admit what the walk would refuse.
+pub fn is_name(s: &str) -> bool {
+    s.len() <= 32 && name(s.as_bytes(), false)
+}
+
+/// Whether `s` is a `d` string value as section 6.6 has it (`^[A-Za-z0-9_.:/-]*$`, cap 64).
+pub fn is_value(s: &str) -> bool {
+    s.len() <= 64 && matches(Pat::Value, s)
+}
+
+/// Whether `s` is lowercase hex of `min` to `max` characters, as a `sid` or an `inc` is.
+pub fn is_hex(s: &str, min: usize, max: usize) -> bool {
+    hex(s, min, max)
+}
+
 /// A child's path: `ev` and `x` make `ev.x`.
 fn join(prefix: &str, key: &str) -> String {
     if prefix.is_empty() { key.to_string() } else { format!("{prefix}.{key}") }
@@ -211,7 +228,7 @@ fn object<'a>(v: &'a Value, cap: usize, path: &str) -> Result<&'a Map<String, Va
 /// A key of `focus` or of an event's `d`, and the path its value is named by.
 fn name_key(path: &str, key: &str) -> Result<String, Invalid> {
     let child = join(path, key);
-    if key.len() <= 32 && name(key.as_bytes(), false) { Ok(child) } else { Err(Invalid::Pattern(child)) }
+    if is_name(key) { Ok(child) } else { Err(Invalid::Pattern(child)) }
 }
 
 /// A tuple of `frames` or `images`: an array of exactly `len` items.
