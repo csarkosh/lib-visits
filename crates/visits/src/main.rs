@@ -26,6 +26,7 @@ async fn serve(args: Serve) -> anyhow::Result<()> {
     let mut apps = BTreeMap::new();
     for spec in &args.app {
         let (name, redirect) = visits::config::parse_app(spec).map_err(|e| anyhow::anyhow!(e))?;
+        if apps.contains_key(&name) { anyhow::bail!("--app {name} is given twice"); }
         apps.insert(name, redirect);
     }
     if !apps.is_empty() { visits::config::check_paths(&args.path, &args.app_path).map_err(|e| anyhow::anyhow!(e))?; }
@@ -33,7 +34,6 @@ async fn serve(args: Serve) -> anyhow::Result<()> {
     let ignore = visits::ignore::parse_list(&args.ignore_ips).map_err(|e| anyhow::anyhow!("--ignore-ips: {e}"))?;
     if !ignore.is_empty() { eprintln!("visits: dropping beacons from {} ignored address range(s)", ignore.len()); }
     let geoip = load_geoip(args.geoip.as_deref())?;
-    let app_names = apps.keys().cloned().collect::<Vec<_>>().join(", ");
     let state = Arc::new(AppState {
         origins: args.origin.iter().map(|o| o.trim_end_matches('/').to_string()).collect::<HashSet<_>>(),
         path: args.path.clone(),
@@ -48,8 +48,13 @@ async fn serve(args: Serve) -> anyhow::Result<()> {
         app_path: args.app_path.clone(),
     });
     let listener = tokio::net::TcpListener::bind(&args.listen).await?;
-    eprintln!("visits: listening on {} for {} from {}", args.listen, args.path, args.origin.join(", "));
-    if !args.app.is_empty() {
+    if args.origin.is_empty() {
+        eprintln!("visits: listening on {}", args.listen);
+    } else {
+        eprintln!("visits: listening on {} for {} from {}", args.listen, args.path, args.origin.join(", "));
+    }
+    if !state.apps.is_empty() {
+        let app_names = state.apps.keys().cloned().collect::<Vec<_>>().join(", ");
         eprintln!("visits: apps on {}: {}", args.app_path, app_names);
     }
     axum::serve(listener, router(state).into_make_service_with_connect_info::<std::net::SocketAddr>())

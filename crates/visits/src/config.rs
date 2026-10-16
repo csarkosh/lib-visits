@@ -89,6 +89,9 @@ pub fn check_paths(path: &str, app_path: &str) -> Result<(), String> {
     if !app_path.starts_with('/') || app_path == "/healthcheck" {
         return Err(format!("--app-path must start with / and not be /healthcheck, got {app_path}"));
     }
+    if app_path.len() > 1 && app_path.ends_with('/') || app_path == "/" {
+        return Err(format!("--app-path must not end with /, got {app_path}"));
+    }
     if app_path == path || path == format!("{app_path}/check") {
         return Err(format!("--path {path} overlaps --app-path {app_path} and its /check route"));
     }
@@ -114,6 +117,8 @@ mod tests {
     fn parse_app_accepts_name_and_redirect() {
         assert_eq!(parse_app("arkos=https://x").unwrap(), ("arkos".to_string(), Some("https://x".to_string())));
         assert_eq!(parse_app("arkos").unwrap(), ("arkos".to_string(), None));
+        // The redirect is kept exactly as written, trailing slash included.
+        assert_eq!(parse_app("a=https://x/").unwrap().1.as_deref(), Some("https://x/"));
         assert_eq!(parse_app("my-app_2=https://a.b/c?d=e").unwrap().0, "my-app_2");
     }
     #[test]
@@ -128,6 +133,8 @@ mod tests {
     fn check_paths_refuses_overlaps() {
         assert!(check_paths("/v", "/a").is_ok());
         assert!(check_paths("/v", "a").is_err());
+        assert!(check_paths("/v", "/").is_err());
+        assert!(check_paths("/v", "/a/").is_err());
         assert!(check_paths("/v", "/v").is_err());
         assert!(check_paths("/v", "/healthcheck").is_err());
         assert!(check_paths("/a", "/a").is_err());
