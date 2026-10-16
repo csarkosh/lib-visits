@@ -79,8 +79,9 @@ fn mark(v: &Value) -> Option<(u64, BTreeMap<String, u64>, u64)> {
     Some((t, focus, rejected))
 }
 
-/// Writes a file whole through a temporary file and a rename.
-fn write_whole(path: &Path, bytes: &[u8]) -> io::Result<()> {
+/// Writes a file whole through a temporary file and a rename. The queue
+/// writes its companions with it too.
+pub(crate) fn write_whole(path: &Path, bytes: &[u8]) -> io::Result<()> {
     let mut tmp = path.as_os_str().to_owned();
     tmp.push(".tmp");
     fs::write(&tmp, bytes)?;

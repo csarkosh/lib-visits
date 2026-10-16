@@ -40,6 +40,15 @@
 //! keeps the days the reports count from; the program saves it with
 //! `State::save` after each call, and the crate never writes it on its own.
 //!
+//! `Queue` holds the reports waiting to leave, each with a `.retry` companion
+//! that says when it was queued, how often it failed and when it is next due.
+//! `Queue::enqueue_crash` queues a crash the person agreed to send, and
+//! `Queue::drain` is the only place the crate calls the program's `Transport`:
+//! it posts what the mode lets leave, reschedules a failure on a backoff of 15
+//! minutes, an hour, four hours, then daily, deletes what the collector
+//! accepted or refused, and drops what has waited more than seven days. It
+//! counts sent and refused reports in a `State` the program saves after it.
+//!
 //! `mode` turns the person's settings, the environment and the build's channel
 //! into what may be recorded and sent. Its default is `Local`: recorded on the
 //! person's disk, nothing sent until they say so.
@@ -47,6 +56,7 @@
 pub mod allowlist;
 pub mod journal;
 pub mod mode;
+pub mod queue;
 pub mod report;
 pub mod seal;
 pub mod state;
@@ -54,6 +64,7 @@ pub mod state;
 pub use allowlist::{Allowlist, Rejected};
 pub use journal::Journal;
 pub use mode::{mode, Crashes, Mode, Settings, Usage};
+pub use queue::{Outcome, Queue, Transport};
 pub use report::{Arch, Channel, Check, Crash, CrashKind, DValue, End, Envelope, Event, Memory, Os, Session, Uptime};
 pub use seal::{seal, seal_stale};
 pub use state::State;
