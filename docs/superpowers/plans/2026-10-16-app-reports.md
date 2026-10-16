@@ -32,6 +32,8 @@
 
 **Mode reasons** (`&'static str`): `"source build"`, `"DO_NOT_TRACK"`, `"telemetry off"`, `"telemetry log"`, `"CI"`, `"not interactive"`. `CI` counts as set only when non-empty (`CI=` is as if unset); `DO_NOT_TRACK` counts unless empty, `0` or `false`.
 
+**Queue files.** A report `queue/<kind>-<id>.json` has its companion `queue/<kind>-<id>.retry` (`with_extension("retry")`). A source build records and seals like any other (`to_bytes` and `to_query` treat `Invalid::Channel` as success, since the source guard lives in `mode()` and in the collector), so a developer can read their own journal and queue; nothing of it ever uploads.
+
 **Who saves `State`.** `seal`, `drain` and `checked` each take `&mut State` and the caller saves it with `State::save` once after the call; the crate never writes `state.toml` on its own.
 
 ## Review Focus
