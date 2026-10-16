@@ -51,8 +51,9 @@ enum Kind {
     Str { cap: usize, pat: Pat },
     Enum(&'static [&'static str]),
     Hex { min: usize, max: usize },
-    Int { min: i64 },
-    /// Days as a whole number of weeks: an integer `>= 0` and a multiple of 7.
+    /// An integer from `min` to `max`; `u64::MAX` as `max` is no cap.
+    Int { min: i64, max: u64 },
+    /// Days as a whole number of weeks: an integer from 0 to `MAX_DAYS` and a multiple of 7.
     Week,
     Focus,
     Events,
@@ -77,15 +78,38 @@ const fn may(key: &'static str, kind: Kind) -> Field {
     Field { key, path: key, kind, required: false }
 }
 
-const NAME: Kind = Kind::Str { cap: 32, pat: Pat::Name };
-const NAME_DASH: Kind = Kind::Str { cap: 32, pat: Pat::NameDash };
-const COUNT: Kind = Kind::Int { min: 0 };
-const DAYS: Kind = Kind::Int { min: -1 };
-const MAX_EVENTS: usize = 200;
-const MAX_DATA: usize = 6;
-const MAX_FOCUS: usize = 16;
+/// The most events a session report carries.
+pub const MAX_EVENTS: usize = 200;
+/// The most keys an event's `d` carries.
+pub const MAX_KEYS: usize = 6;
+/// The most surfaces a session's `focus` carries.
+pub const MAX_FOCUS: usize = 16;
+/// The longest name: an event's `n`, a `d` key, a `focus` key, `app`, `bin` and `ch`.
+pub const MAX_NAME: usize = 32;
+/// The longest `d` string value.
+pub const MAX_VALUE: usize = 64;
 const MAX_FRAMES: usize = 64;
 const MAX_IMAGES: usize = 32;
+
+/// The greatest `osv`, an OS major version.
+pub const MAX_OSV: u64 = 999;
+/// The greatest count of days: `rd` and `iw`.
+pub const MAX_DAYS: u64 = 100_000;
+/// The greatest count of seconds, 31 days: a session's `len`, an event's `t` and a focus total.
+pub const MAX_SECS: u64 = 31 * 86_400;
+/// The greatest source line of a crash.
+pub const MAX_LINE: u64 = 10_000_000;
+/// The greatest signal number of a crash.
+pub const MAX_SIG: u64 = 255;
+/// The greatest `ev_dropped` and `ev_rejected`.
+pub const MAX_COUNT: u64 = 1_000_000;
+
+const NAME: Kind = Kind::Str { cap: MAX_NAME, pat: Pat::Name };
+const NAME_DASH: Kind = Kind::Str { cap: MAX_NAME, pat: Pat::NameDash };
+const OSV: Kind = Kind::Int { min: 0, max: MAX_OSV };
+const SECS: Kind = Kind::Int { min: 0, max: MAX_SECS };
+const COUNT: Kind = Kind::Int { min: 0, max: MAX_COUNT };
+const DAYS: Kind = Kind::Int { min: -1, max: MAX_DAYS };
 
 const ENVELOPE: &[Field] = &[
     must("v", Kind::Two),
@@ -93,7 +117,7 @@ const ENVELOPE: &[Field] = &[
     must("ver", Kind::Str { cap: 32, pat: Pat::Version }),
     must("bin", NAME_DASH),
     must("os", Kind::Enum(&["macos", "linux", "windows"])),
-    must("osv", COUNT),
+    must("osv", OSV),
     must("arch", Kind::Enum(&["arm64", "x86_64"])),
     must("ch", NAME_DASH),
     must("k", Kind::Enum(&["check", "session", "crash"])),
@@ -103,7 +127,7 @@ const CHECK: &[Field] = &[must("rd", DAYS)];
 
 const SESSION: &[Field] = &[
     must("sid", Kind::Hex { min: 16, max: 32 }),
-    must("len", COUNT),
+    must("len", SECS),
     must("end", Kind::Enum(&["quit", "lost", "unknown"])),
     must("iw", Kind::Week),
     must("rd", DAYS),
@@ -115,7 +139,7 @@ const SESSION: &[Field] = &[
 
 const EVENT: &[Field] = &[
     Field { key: "n", path: "ev.n", kind: NAME, required: true },
-    Field { key: "t", path: "ev.t", kind: COUNT, required: true },
+    Field { key: "t", path: "ev.t", kind: SECS, required: true },
     Field { key: "d", path: "ev.d", kind: Kind::Data, required: false },
 ];
 
@@ -126,10 +150,10 @@ const CRASH: &[Field] = &[
     must("pk", Kind::Str { cap: 64, pat: Pat::Name }),
     may("mh", Kind::Hex { min: 64, max: 64 }),
     must("file", Kind::Str { cap: 256, pat: Pat::Path }),
-    must("line", COUNT),
+    must("line", Kind::Int { min: 0, max: MAX_LINE }),
     must("frames", Kind::Frames),
     must("images", Kind::Images),
-    may("sig", COUNT),
+    may("sig", Kind::Int { min: 0, max: MAX_SIG }),
     must("up", Kind::Enum(&["<1m", "<10m", "<1h", "<1d", ">=1d"])),
     may("mem", Kind::Enum(&["normal", "warn", "critical", "unknown"])),
 ];
@@ -178,12 +202,12 @@ fn hex(s: &str, min: usize, max: usize) -> bool {
 /// event's `n`, a `d` key or a `focus` key. The client crate checks a program's
 /// allowlist with it, so the allowlist cannot admit what the walk would refuse.
 pub fn is_name(s: &str) -> bool {
-    s.len() <= 32 && name(s.as_bytes(), false)
+    s.len() <= MAX_NAME && name(s.as_bytes(), false)
 }
 
 /// Whether `s` is a `d` string value as section 6.6 has it (`^[A-Za-z0-9_.:/-]*$`, cap 64).
 pub fn is_value(s: &str) -> bool {
-    s.len() <= 64 && matches(Pat::Value, s)
+    s.len() <= MAX_VALUE && matches(Pat::Value, s)
 }
 
 /// Whether `s` is lowercase hex of `min` to `max` characters, as a `sid` or an `inc` is.
@@ -200,10 +224,12 @@ fn string<'a>(v: &'a Value, path: &str) -> Result<&'a str, Invalid> {
     v.as_str().ok_or_else(|| Invalid::Type(path.into()))
 }
 
-fn int(v: &Value, min: i64, path: &str) -> Result<(), Invalid> {
+fn int(v: &Value, min: i64, max: u64, path: &str) -> Result<(), Invalid> {
     match v {
-        // A whole number above `i64::MAX` is above every minimum.
-        Value::Number(n) if n.is_u64() => Ok(()),
+        // A whole number `>= 0` is above every minimum, so only the cap is checked.
+        Value::Number(n) if n.is_u64() => {
+            if n.as_u64().is_some_and(|u| u <= max) { Ok(()) } else { Err(Invalid::Pattern(path.into())) }
+        }
         Value::Number(n) => match n.as_i64() {
             Some(i) if i >= min => Ok(()),
             Some(_) => Err(Invalid::Pattern(path.into())),
@@ -250,15 +276,15 @@ fn check_value(kind: Kind, v: &Value, path: &str) -> Result<(), Invalid> {
         }
         Kind::Enum(set) => if set.contains(&string(v, path)?) { Ok(()) } else { Err(Invalid::Pattern(path.into())) },
         Kind::Hex { min, max } => if hex(string(v, path)?, min, max) { Ok(()) } else { Err(Invalid::Pattern(path.into())) },
-        Kind::Int { min } => int(v, min, path),
+        Kind::Int { min, max } => int(v, min, max, path),
         Kind::Week => {
-            int(v, 0, path)?;
+            int(v, 0, MAX_DAYS, path)?;
             // `int` with a minimum of 0 leaves only whole numbers that fit a `u64`.
             if v.as_u64().is_some_and(|w| w % 7 == 0) { Ok(()) } else { Err(Invalid::Pattern(path.into())) }
         }
         Kind::Focus => {
             for (k, secs) in object(v, MAX_FOCUS, path)? {
-                int(secs, 0, &name_key(path, k)?)?;
+                int(secs, 0, MAX_SECS, &name_key(path, k)?)?;
             }
             Ok(())
         }
@@ -269,7 +295,7 @@ fn check_value(kind: Kind, v: &Value, path: &str) -> Result<(), Invalid> {
             Ok(())
         }
         Kind::Data => {
-            for (k, value) in object(v, MAX_DATA, path)? {
+            for (k, value) in object(v, MAX_KEYS, path)? {
                 let child = name_key(path, k)?;
                 match value {
                     Value::String(s) if is_value(s) => {}
@@ -286,7 +312,7 @@ fn check_value(kind: Kind, v: &Value, path: &str) -> Result<(), Invalid> {
         Kind::Frames => {
             for pair in array(v, MAX_FRAMES, path)? {
                 for n in tuple(pair, 2, path)? {
-                    int(n, 0, path)?;
+                    int(n, 0, u64::MAX, path)?;
                 }
             }
             Ok(())
@@ -296,7 +322,7 @@ fn check_value(kind: Kind, v: &Value, path: &str) -> Result<(), Invalid> {
                 let t = tuple(triple, 3, path)?;
                 check_value(Kind::Str { cap: 64, pat: Pat::ImageName }, &t[0], "images.name")?;
                 check_value(Kind::Hex { min: 32, max: 32 }, &t[1], "images.uuid")?;
-                int(&t[2], 0, "images.size")?;
+                int(&t[2], 0, u64::MAX, "images.size")?;
             }
             Ok(())
         }

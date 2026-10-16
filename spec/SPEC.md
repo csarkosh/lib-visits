@@ -136,7 +136,7 @@ Every report and check carries these keys, all required, and no key outside its 
 | `ver` | string | `^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$`, at most 32 |
 | `bin` | string | `^[a-z][a-z0-9_-]{0,31}$` |
 | `os` | string | `macos`, `linux`, `windows` |
-| `osv` | integer | `>= 0`, the OS major version |
+| `osv` | integer | `0` to `999`, the OS major version |
 | `arch` | string | `arm64`, `x86_64` |
 | `ch` | string | `^[a-z][a-z0-9_-]{0,31}$`: `release`, `source`, or a name the program adds (`tap`, `direct`) |
 | `k` | string | `check`, `session`, `crash` |
@@ -145,7 +145,7 @@ Every report and check carries these keys, all required, and no key outside its 
 
 | Key | Type | Rule |
 |---|---|---|
-| `rd` | integer, required | `>= -1`: days since the program's last check through this route, rounded down; `-1` the first ever |
+| `rd` | integer, required | `-1` to `100000`: days since the program's last check through this route, rounded down; `-1` the first ever |
 
 A duplicate key in the query is refused (`400`); the last value does not win.
 
@@ -154,21 +154,21 @@ A duplicate key in the query is refused (`400`); the last value does not win.
 | Key | Type | Rule |
 |---|---|---|
 | `sid` | string, required | `^[0-9a-f]{16,32}$` |
-| `len` | integer, required | `>= 0`, seconds |
+| `len` | integer, required | `0` to `2678400` (31 days), seconds |
 | `end` | string, required | `quit`, `lost`, `unknown` |
-| `iw` | integer, required | `>= 0`, days since the epoch of first launch, a multiple of 7 |
-| `rd` | integer, required | `>= -1`, days since the last session report |
-| `focus` | object, required | at most 16 keys, `^[a-z][a-z0-9_]{0,31}$`, values integers `>= 0` |
+| `iw` | integer, required | `0` to `100000`, days since the epoch of first launch, a multiple of 7 |
+| `rd` | integer, required | `-1` to `100000`, days since the last session report |
+| `focus` | object, required | at most 16 keys, `^[a-z][a-z0-9_]{0,31}$`, values integers `0` to `2678400`, seconds |
 | `ev` | array, required | at most 200 events |
-| `ev_dropped` | integer, optional | `>= 0` |
-| `ev_rejected` | integer, optional | `>= 0` |
+| `ev_dropped` | integer, optional | `0` to `1000000` |
+| `ev_rejected` | integer, optional | `0` to `1000000` |
 
 An event:
 
 | Key | Type | Rule |
 |---|---|---|
 | `n` | string, required | `^[a-z][a-z0-9_]{0,31}$` |
-| `t` | integer, required | `>= 0`, seconds since launch |
+| `t` | integer, required | `0` to `2678400`, seconds since launch |
 | `d` | object, optional | at most 6 keys, `^[a-z][a-z0-9_]{0,31}$`; values are strings of at most 64 characters matching `^[A-Za-z0-9_.:/-]*$`, integers (any i64), or booleans |
 
 More than 200 events, more than 6 `d` keys or more than 16 `focus` keys is `400`, not `413`.
@@ -183,18 +183,19 @@ More than 200 events, more than 6 `d` keys or more than 16 `focus` keys is `400`
 | `pk` | string, required | `^[a-z][a-z0-9_]{0,63}$`, or `other` |
 | `mh` | string, optional | 64 lowercase hex, SHA-256 of the message's first line |
 | `file` | string, required | `^[A-Za-z0-9_./-]*$`, at most 256 |
-| `line` | integer, required | `>= 0` |
+| `line` | integer, required | `0` to `10000000` |
 | `frames` | array, required | at most 64 pairs of integers `>= 0`: `[image index, offset]` |
 | `images` | array, required | at most 32 triples `[name, uuid, size]`: name `^[A-Za-z0-9_.-]{1,64}$`, uuid 32 lowercase hex, size integer `>= 0` |
-| `sig` | integer, optional | `>= 0` |
+| `sig` | integer, optional | `0` to `255` |
 | `up` | string, required | `<1m`, `<10m`, `<1h`, `<1d`, `>=1d` |
 | `mem` | string, optional | `normal`, `warn`, `critical`, `unknown` |
 
 ### 6.6 Value rules
 
 Every string has a pattern and a cap; there is no free text. A value that fails
-its pattern, an integer below its minimum, or a value of the wrong type is
-`400`. A path in an error is dotted with no index (`ev.d.x`, `images.uuid`).
+its pattern, an integer outside its range, or a value of the wrong type is
+`400`. Frame offsets and image sizes have no cap beyond an unsigned 64-bit
+integer. A path in an error is dotted with no index (`ev.d.x`, `images.uuid`).
 
 ### 6.7 Decoration
 

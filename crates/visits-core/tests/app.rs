@@ -197,7 +197,33 @@ fn counts_types_and_integer_range() {
     assert_eq!(crash_with("images", Value::Array(vec![image; 33])), Err(Invalid::Keys("images".into())));
     assert_eq!(session_with("ev", json!(["launch"])), Err(Invalid::Type("ev".into())));
     assert_eq!(session_with("osv", json!(1.5)), Err(Invalid::Type("osv".into())));
-    assert!(session_with("osv", json!(u64::MAX)).is_ok());
+    assert_eq!(session_with("osv", json!(u64::MAX)), Err(Invalid::Pattern("osv".into())));
+}
+
+#[test]
+fn each_integer_maximum_is_itself_accepted() {
+    use visits_core::app::{MAX_COUNT, MAX_DAYS, MAX_LINE, MAX_OSV, MAX_SECS, MAX_SIG};
+    assert_eq!((MAX_OSV, MAX_DAYS, MAX_SECS, MAX_LINE, MAX_SIG, MAX_COUNT), (999, 100_000, 31 * 86_400, 10_000_000, 255, 1_000_000));
+    assert!(session_with("osv", json!(MAX_OSV)).is_ok());
+    assert!(session_with("rd", json!(MAX_DAYS)).is_ok());
+    assert!(session_with("len", json!(MAX_SECS)).is_ok());
+    assert!(session_with("ev", json!([{ "n": "launch", "t": MAX_SECS }])).is_ok());
+    assert!(session_with("focus", json!({ "editor": MAX_SECS })).is_ok());
+    // The greatest multiple of 7 at or below the cap.
+    assert!(session_with("iw", json!(MAX_DAYS - MAX_DAYS % 7)).is_ok());
+    assert!(session_with("ev_dropped", json!(MAX_COUNT)).is_ok());
+    assert!(session_with("ev_rejected", json!(MAX_COUNT)).is_ok());
+    assert!(crash_with("line", json!(MAX_LINE)).is_ok());
+    assert!(crash_with("sig", json!(MAX_SIG)).is_ok());
+    let q = fixture("check")["query"].as_str().unwrap().replace("rd=-1", &format!("rd={MAX_DAYS}"));
+    assert!(validate_check(&q).is_ok());
+}
+
+#[test]
+fn frames_and_image_sizes_take_any_u64() {
+    assert!(crash_with("frames", json!([[0, u64::MAX]])).is_ok());
+    assert!(crash_with("frames", json!([[u64::MAX, 0]])).is_ok());
+    assert!(crash_with("images", json!([["a", "0123456789abcdef0123456789abcdef", u64::MAX]])).is_ok());
 }
 
 #[test]
@@ -208,8 +234,10 @@ fn query_integers_read_as_a_body_would() {
     assert_eq!(validate_check(&format!("{base}&osv=15&rd=%2B5")), Err(Invalid::Type("rd".into())));
     assert_eq!(validate_check(&format!("{base}&osv=15&rd=-")), Err(Invalid::Type("rd".into())));
     assert_eq!(validate_check(&format!("{base}&osv=1.5&rd=0")), Err(Invalid::Type("osv".into())));
-    let r = validate_check(&format!("{base}&osv={}&rd=0", u64::MAX)).unwrap();
-    assert_eq!(r.fields["osv"], json!(u64::MAX));
+    let r = validate_check(&format!("{base}&osv=999&rd=0")).unwrap();
+    assert_eq!(r.fields["osv"], json!(999));
+    // A whole number above `i64::MAX` reads as a number, which is then above the cap.
+    assert_eq!(validate_check(&format!("{base}&osv={}&rd=0", u64::MAX)), Err(Invalid::Pattern("osv".into())));
     assert_eq!(validate_check(&format!("{base}&osv=99999999999999999999&rd=0")), Err(Invalid::Type("osv".into())));
 }
 
