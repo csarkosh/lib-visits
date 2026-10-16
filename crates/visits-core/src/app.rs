@@ -272,7 +272,8 @@ fn check_value(kind: Kind, v: &Value, path: &str) -> Result<(), Invalid> {
             for (k, value) in object(v, MAX_DATA, path)? {
                 let child = name_key(path, k)?;
                 match value {
-                    Value::String(_) => check_value(Kind::Str { cap: 64, pat: Pat::Value }, value, &child)?,
+                    Value::String(s) if is_value(s) => {}
+                    Value::String(_) => return Err(Invalid::Pattern(child)),
                     // A payload integer has no minimum (a delta can be negative) but must fit an `i64`.
                     Value::Number(n) if n.is_i64() => {}
                     Value::Number(n) if n.is_u64() => return Err(Invalid::Pattern(child)),

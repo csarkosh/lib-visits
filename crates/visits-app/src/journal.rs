@@ -10,11 +10,14 @@
 //!   as in a report (`d` left out when empty), its `t` the seconds since `start`;
 //! - each `Journal::mark` is a line
 //!   `{"mark": {"t": <seconds since start>, "focus": {<surface>: <seconds>}, "rejected": <count>}}`,
-//!   the running totals since `start`, so the last mark replaces every earlier one.
+//!   the running totals since `start`, so the last mark replaces every earlier one;
+//!   `rejected` counts the events the allowlist refused and the focus surfaces
+//!   the wire would refuse.
 //!
 //! Every line is written with one `write_all` of the whole line on a file opened
-//! for appending, so a crash leaves at most one cut line, the last, which a
-//! reader skips because it has no `\n`.
+//! for appending, so a crash leaves at most one cut line, at the end. A write
+//! that fails partway can also leave a cut line mid-file, glued to the line after
+//! it, so a reader skips every line that does not parse as JSON, wherever it is.
 
 use crate::allowlist::Allowlist;
 use crate::report::{Envelope, Event};
@@ -50,12 +53,18 @@ impl Journal {
         }
         let folder = dir.join("journal");
         fs::create_dir_all(&folder)?;
-        let file = OpenOptions::new().append(true).create_new(true).open(folder.join(format!("{sid}.jsonl")))?;
+        let path = folder.join(format!("{sid}.jsonl"));
+        let file = OpenOptions::new().append(true).create_new(true).open(&path)?;
         let mut journal = Journal { file, start: now, allow, focus: BTreeMap::new(), rejected: 0 };
         let mut env = env.to_map("session");
         env.remove("v");
         env.remove("k");
-        journal.line(&json!({ "start": now, "env": env }))?;
+        if let Err(e) = journal.line(&json!({ "start": now, "env": env })) {
+            // A journal without its start line is unreadable; removing it lets a retry create it afresh.
+            drop(journal);
+            let _ = fs::remove_file(&path);
+            return Err(e);
+        }
         Ok(journal)
     }
 
@@ -73,16 +82,20 @@ impl Journal {
 
     /// Adds `secs` seconds in the foreground to `surface`, in memory until the
     /// next `mark`. A surface that is not a name, or a seventeenth surface, is
-    /// ignored, so one bad call cannot make the whole session unsendable.
+    /// left out and counted as rejected, so one bad call cannot make the whole
+    /// session unsendable and still shows up in the data.
     pub fn focus(&mut self, surface: &str, secs: u64) {
         if !is_name(surface) || (self.focus.len() >= MAX_FOCUS && !self.focus.contains_key(surface)) {
+            self.rejected += 1;
             return;
         }
-        *self.focus.entry(surface.to_string()).or_default() += secs;
+        let total = self.focus.entry(surface.to_string()).or_default();
+        *total = total.saturating_add(secs);
     }
 
     /// Appends a mark line with the time since the start, the focus totals and
-    /// the rejected count. The program calls it at most once a minute.
+    /// the rejected count (refused events and refused surfaces). The program
+    /// calls it at most once a minute.
     pub fn mark(&mut self, now: u64) -> io::Result<()> {
         let focus: Map<String, Value> = self.focus.iter().map(|(k, v)| (k.clone(), Value::from(*v))).collect();
         let t = now.saturating_sub(self.start);

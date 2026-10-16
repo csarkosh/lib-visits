@@ -108,6 +108,7 @@ fn open_refuses_a_sid_that_could_be_a_path() {
     }
     assert!(!dir.join("x").exists() && !dir.join("journal").exists(), "nothing is created for a refused sid");
     assert!(Journal::open(&dir, &"a".repeat(32), &envelope(), Allowlist::from_toml(ALLOW).unwrap(), 1000).is_ok());
+    std::fs::remove_dir_all(&dir).unwrap();
 }
 
 #[test]
@@ -139,6 +140,7 @@ fn the_journal_has_a_start_line_events_and_marks() {
     let mut second = first.clone();
     second.push(json!({ "mark": { "t": 120, "focus": { "terminal": 42, "viewer": 15 }, "rejected": 2 } }));
     assert_eq!(lines(&dir), second, "a second mark appends a line with the running totals");
+    std::fs::remove_dir_all(&dir).unwrap();
 }
 
 #[test]
@@ -147,6 +149,18 @@ fn a_mark_with_nothing_recorded_has_empty_focus() {
     let mut j = Journal::open(&dir, SID, &envelope(), Allowlist::from_toml(ALLOW).unwrap(), 500).unwrap();
     j.mark(530).unwrap();
     assert_eq!(lines(&dir)[1], json!({ "mark": { "t": 30, "focus": {}, "rejected": 0 } }));
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn a_clock_that_went_back_gives_t_zero() {
+    let dir = scratch("back");
+    let mut j = Journal::open(&dir, SID, &envelope(), Allowlist::from_toml(ALLOW).unwrap(), 500).unwrap();
+    j.event(event("window_open", &[]), 490);
+    j.mark(480).unwrap();
+    assert_eq!(lines(&dir)[1], json!({ "ev": { "n": "window_open", "t": 0 } }));
+    assert_eq!(lines(&dir)[2]["mark"]["t"], json!(0));
+    std::fs::remove_dir_all(&dir).unwrap();
 }
 
 #[test]
@@ -155,10 +169,11 @@ fn a_named_channel_is_spelled_as_its_name() {
     let env = Envelope { ch: Channel::Named("tap".into()), ..envelope() };
     Journal::open(&dir, SID, &env, Allowlist::from_toml(ALLOW).unwrap(), 7).unwrap();
     assert_eq!(lines(&dir)[0]["env"]["ch"], json!("tap"));
+    std::fs::remove_dir_all(&dir).unwrap();
 }
 
 #[test]
-fn a_surface_the_wire_would_refuse_is_left_out_of_focus() {
+fn a_surface_the_wire_would_refuse_is_left_out_of_focus_and_counted() {
     let dir = scratch("surfaces");
     let mut j = Journal::open(&dir, SID, &envelope(), Allowlist::from_toml(ALLOW).unwrap(), 0).unwrap();
     j.focus("Bad Surface", 9);
@@ -171,6 +186,8 @@ fn a_surface_the_wire_would_refuse_is_left_out_of_focus() {
     assert_eq!(focus.len(), 16);
     assert_eq!(focus["s00"], json!(2));
     assert!(!focus.contains_key("s16") && !focus.contains_key("Bad Surface"));
+    assert_eq!(lines(&dir)[1]["mark"]["rejected"], json!(2), "the bad name and the seventeenth surface");
+    std::fs::remove_dir_all(&dir).unwrap();
 }
 
 #[test]
@@ -180,4 +197,5 @@ fn a_journal_is_opened_once() {
     let err = Journal::open(&dir, SID, &envelope(), Allowlist::from_toml(ALLOW).unwrap(), 5).err();
     assert_eq!(err.map(|e| e.kind()), Some(ErrorKind::AlreadyExists));
     assert_eq!(lines(&dir).len(), 1, "the first start line is kept alone");
+    std::fs::remove_dir_all(&dir).unwrap();
 }
