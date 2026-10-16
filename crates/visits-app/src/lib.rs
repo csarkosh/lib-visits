@@ -64,7 +64,8 @@
 //!
 //! `view` reads the folder for the program's `telemetry view` command: the
 //! mode, the state, each queued report with its failed attempts and next time,
-//! the session sealed last and the journals present; `payload_of` gives the
+//! the session sealed last (a copy `seal` keeps beside the queue, there even
+//! after the report was sent) and the journals present; `payload_of` gives the
 //! bytes of any one of them, for a "Show report" button.
 //!
 //! The program's loop, in its own threads and timers, with `dir` its folder
@@ -85,17 +86,24 @@
 //! # let (collector, updates) = ("https://visits.example.com/a", "https://example.com/arkos/latest.json");
 //! // At launch, seal what a lost process left over a day ago and open this session's journal.
 //! let mut state = State::load(dir);
-//! seal_stale(dir, now(), 86_400, &mut state)?; state.save(dir)?;
+//! seal_stale(dir, now(), 86_400, &mut state)?;
+//! state.save(dir)?;
 //! let mut journal = Journal::open(dir, sid, &env, allow, now())?;
 //! // Each minute, the focus totals are flushed.
 //! journal.mark(now())?;
 //! // When the process ends, its journal becomes a report in the queue.
-//! seal(dir, sid, End::Quit, now(), &mut state)?; state.save(dir)?;
+//! seal(dir, sid, End::Quit, now(), &mut state)?;
+//! state.save(dir)?;
 //! // Every 15 minutes, the queue posts what the mode lets leave.
-//! Queue::new(dir).drain(&http, collector, ua, &mode, now(), &mut state); state.save(dir)?;
+//! Queue::new(dir).drain(&http, collector, ua, &mode, now(), &mut state);
+//! state.save(dir)?;
 //! // Before an update fetch, the day's first goes through the collector.
 //! match Check::next(&env, &state, now()) {
-//!     Some(check) => { fetch(&format!("{collector}/check?{}", check.to_query()?)); state.checked(now()); state.save(dir)?; }
+//!     Some(check) => {
+//!         fetch(&format!("{collector}/check?{}", check.to_query()?));
+//!         state.checked(now());
+//!         state.save(dir)?;
+//!     }
 //!     None => fetch(updates),
 //! }
 //! # Ok(()) }

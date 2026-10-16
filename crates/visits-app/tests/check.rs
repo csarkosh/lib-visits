@@ -2,7 +2,7 @@ use serde_json::json;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use visits_app::{mode, payload_of, view, Arch, Channel, Check, Envelope, Mode, Os, Settings, State, Usage};
+use visits_app::{mode, payload_of, seal, view, Allowlist, Arch, Channel, Check, End, Envelope, Journal, Mode, Os, Settings, State, Usage};
 
 const DAY: u64 = 86_400;
 const D0: u64 = 20_633;
@@ -109,9 +109,8 @@ fn local() -> Mode {
 }
 
 #[test]
-fn view_lists_the_queue_the_newest_session_and_the_journals() {
+fn view_lists_the_queue_and_the_journals() {
     let dir = scratch("view");
-    // The newer session sorts first by name, so the newest must come from the companions.
     let newer = put(&dir, "session-0a0a0a0a0a0a0a0a", Some((NOON - 3_600, 0, NOON - 3_600)));
     let older = put(&dir, "session-ffffffffffffffff", Some((NOON - 2 * DAY, 3, NOON + 4 * 3_600)));
     let crash = put(&dir, "crash-a41c0e9d7b3258f6", Some((NOON - 600, 1, NOON + 300)));
@@ -130,8 +129,9 @@ fn view_lists_the_queue_the_newest_session_and_the_journals() {
     assert_eq!(v.mode, local());
     assert_eq!(v.mode.usage, Usage::Local);
     assert_eq!(v.state, state);
-    assert_eq!(v.queued, vec![(crash, 1, NOON + 300), (newer.clone(), 0, NOON - 3_600), (older, 3, NOON + 4 * 3_600)]);
-    assert_eq!(v.last_session, Some(newer));
+    assert_eq!(v.queued, vec![(crash, 1, NOON + 300), (newer, 0, NOON - 3_600), (older, 3, NOON + 4 * 3_600)]);
+    // Reports in the queue are not a sealed session: only `seal` keeps one.
+    assert_eq!(v.last_session, None);
     assert_eq!(v.journals, vec![journal.join("aaaaaaaaaaaaaaaa.jsonl"), journal.join("bbbbbbbbbbbbbbbb.jsonl")]);
     std::fs::remove_dir_all(&dir).unwrap();
 }
@@ -161,5 +161,41 @@ fn payload_of_is_the_bytes_on_disk() {
     let path = put(&dir, "session-3f9a1c27b84d5e60", Some((NOON, 0, NOON)));
     assert_eq!(payload_of(&path).unwrap(), b"{\"report\":\"session-3f9a1c27b84d5e60\"}");
     assert_eq!(payload_of(&dir.join("queue/session-0000000000000000.json")).unwrap_err().kind(), ErrorKind::NotFound);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// Opens and seals a journal for `sid` that started at `start`, returning the
+/// queued report's path.
+fn sealed(dir: &Path, sid: &str, start: u64, state: &mut State) -> PathBuf {
+    let allow = Allowlist::from_toml("[events.window_open]").unwrap();
+    Journal::open(dir, sid, &release(), allow, start).unwrap();
+    seal(dir, sid, End::Quit, start + 600, state).unwrap().unwrap()
+}
+
+#[test]
+fn the_last_sealed_session_is_kept_beside_the_queue() {
+    let dir = scratch("last");
+    let mut state = State::default();
+    let first = sealed(&dir, "3f9a1c27b84d5e60", NOON, &mut state);
+    let last = dir.join("last-session.json");
+    let v = view(&dir, local(), NOON + 600);
+    assert_eq!(v.last_session.as_deref(), Some(last.as_path()));
+    assert_eq!(payload_of(&last).unwrap(), std::fs::read(&first).unwrap());
+
+    // Sent: the queued report is gone, and the copy stays to be shown.
+    let bytes = std::fs::read(&first).unwrap();
+    std::fs::remove_file(&first).unwrap();
+    std::fs::remove_file(first.with_extension("retry")).unwrap();
+    let v = view(&dir, local(), NOON + 700);
+    assert_eq!(v.queued, vec![]);
+    assert_eq!(v.last_session.as_deref(), Some(last.as_path()));
+    assert_eq!(payload_of(&last).unwrap(), bytes);
+
+    // A second seal replaces it.
+    let second = sealed(&dir, "a41c0e9d7b3258f6", NOON + DAY, &mut state);
+    let v = view(&dir, local(), NOON + DAY + 600);
+    assert_eq!(v.last_session.as_deref(), Some(last.as_path()));
+    assert_eq!(payload_of(&last).unwrap(), std::fs::read(&second).unwrap());
+    assert_ne!(payload_of(&last).unwrap(), bytes);
     std::fs::remove_dir_all(&dir).unwrap();
 }

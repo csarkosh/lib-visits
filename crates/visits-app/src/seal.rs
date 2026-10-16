@@ -13,6 +13,10 @@
 //! start line, or whose envelope cannot be read, cannot be reported and is
 //! deleted.
 //!
+//! The report is also copied to `<dir>/last-session.json`, overwritten by each
+//! seal, so `view` can show the session sealed last after the queued report
+//! has been sent; `seal_stale` seals oldest first, so the newest one stays.
+//!
 //! Two crash windows remain, both harmless. A crash between the report's rename
 //! and the journal's removal leaves the journal to be sealed again, so the
 //! collector may see the same `sid` twice. A crash between the two renames
@@ -30,6 +34,9 @@ use visits_core::app::is_hex;
 
 /// Seconds in a UTC day.
 const DAY: u64 = 86_400;
+
+/// The copy of the session report sealed last, beside the queue.
+const LAST: &str = "last-session.json";
 
 /// What a journal says about its session.
 struct Recorded {
@@ -89,7 +96,8 @@ pub(crate) fn write_whole(path: &Path, bytes: &[u8]) -> io::Result<()> {
 }
 
 /// Seals `<dir>/journal/<sid>.jsonl` into `<dir>/queue/session-<sid>.json` and
-/// deletes the journal, returning the report's path.
+/// deletes the journal, returning the report's path. The same bytes are
+/// written to `<dir>/last-session.json`, replacing the previous session's.
 ///
 /// `len` is `now` less the start for `Quit`, and for `Lost` and `Unknown` the
 /// last time the journal saw, since the process may have gone long before
@@ -155,6 +163,8 @@ pub fn seal(dir: &Path, sid: &str, end: End, now: u64, state: &mut State) -> io:
     let retry = json!({ "first": now, "attempts": 0, "next": now });
     write_whole(&path.with_extension("retry"), retry.to_string().as_bytes())?;
     write_whole(&path, &report)?;
+    // A copy for `view`, which outlives the queued report once it is sent.
+    write_whole(&dir.join(LAST), &report)?;
     state.last_report_day = Some(today);
     fs::remove_file(&journal)?;
     Ok(Some(path))

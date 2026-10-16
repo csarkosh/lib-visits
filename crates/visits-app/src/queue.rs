@@ -122,17 +122,9 @@ impl Queue {
         self.dir.join("queue")
     }
 
-    /// The files in the queue's folder with this extension, sorted by name, so
-    /// `x.json.tmp`, a write in progress, is never one. Empty when the folder
-    /// does not exist or cannot be read.
-    pub(crate) fn files(&self, extension: &str) -> Vec<PathBuf> {
-        let Ok(entries) = fs::read_dir(self.folder()) else { return Vec::new() };
-        let mut files: Vec<PathBuf> = entries
-            .filter_map(|e| e.ok().map(|e| e.path()))
-            .filter(|p| p.extension().is_some_and(|x| x == extension) && p.is_file())
-            .collect();
-        files.sort();
-        files
+    /// The files in the queue's folder with this extension, sorted by name.
+    fn files(&self, extension: &str) -> Vec<PathBuf> {
+        files_in(&self.folder(), extension)
     }
 
     /// Queues a crash report as `<dir>/queue/crash-<inc>.json` with a fresh
@@ -269,6 +261,19 @@ impl Queue {
             }
         }
     }
+}
+
+/// The files in `folder` with this extension, sorted by name, so `x.json.tmp`,
+/// a write in progress, is never one. Empty when the folder does not exist or
+/// cannot be read.
+pub(crate) fn files_in(folder: &Path, extension: &str) -> Vec<PathBuf> {
+    let Ok(entries) = fs::read_dir(folder) else { return Vec::new() };
+    let mut files: Vec<PathBuf> = entries
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .filter(|p| p.extension().is_some_and(|x| x == extension) && p.is_file())
+        .collect();
+    files.sort();
+    files
 }
 
 /// Counts one more failed post of the report at `report` and sets its next
