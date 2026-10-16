@@ -31,6 +31,12 @@
 //! a name or key outside `^[a-z][a-z0-9_]{0,31}$`, more than 6 keys for one
 //! event, or a value outside `^[A-Za-z0-9_.:/-]*$` or longer than 64.
 //!
+//! `seal` turns the journal of a session that has ended into a session report
+//! in the queue, and `seal_stale` does so at launch for the journals a lost
+//! process left behind. Both change a `State`, the small `state.toml` that
+//! keeps the days the reports count from; the program saves it with
+//! `State::save` after each call, and the crate never writes it on its own.
+//!
 //! `mode` turns the person's settings, the environment and the build's channel
 //! into what may be recorded and sent. Its default is `Local`: recorded on the
 //! person's disk, nothing sent until they say so.
@@ -39,9 +45,13 @@ pub mod allowlist;
 pub mod journal;
 pub mod mode;
 pub mod report;
+pub mod seal;
+pub mod state;
 
 pub use allowlist::{Allowlist, Rejected};
 pub use journal::Journal;
 pub use mode::{mode, Crashes, Mode, Settings, Usage};
 pub use report::{Arch, Channel, Check, Crash, CrashKind, DValue, End, Envelope, Event, Memory, Os, Session, Uptime};
+pub use seal::{seal, seal_stale};
+pub use state::State;
 pub use visits_core::Invalid;

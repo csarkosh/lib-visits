@@ -243,3 +243,19 @@ fn an_event_d_map_is_built_from_a_btreemap() {
     let v = as_value(&s.to_bytes().unwrap());
     assert_eq!(v["ev"][0]["d"], serde_json::json!({ "ok": false, "delta": -4 }));
 }
+
+#[test]
+fn the_wire_spellings_read_back_into_the_enums() {
+    for os in [Os::Macos, Os::Linux, Os::Windows] {
+        assert_eq!(Os::from_wire(os.as_str()), Some(os));
+    }
+    for arch in [Arch::Arm64, Arch::X86_64] {
+        assert_eq!(Arch::from_wire(arch.as_str()), Some(arch));
+    }
+    assert_eq!(Os::from_wire("MacOS"), None);
+    assert_eq!(Os::from_wire("freebsd"), None);
+    assert_eq!(Arch::from_wire("aarch64"), None);
+    assert_eq!(Channel::from_wire("release"), Channel::Release);
+    assert_eq!(Channel::from_wire("source"), Channel::Source);
+    assert_eq!(Channel::from_wire("tap"), Channel::Named("tap".into()));
+}

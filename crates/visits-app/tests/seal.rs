@@ -1,0 +1,346 @@
+use serde_json::{json, Value};
+use std::collections::BTreeMap;
+use std::io::ErrorKind;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use visits_app::{seal, seal_stale, Allowlist, Arch, Channel, DValue, End, Envelope, Event, Journal, Os, Session, State};
+
+const SID: &str = "3f9a1c27b84d5e60";
+const DAY: u64 = 86_400;
+
+/// A day number that is not a multiple of 7, at noon UTC, so `iw` must round.
+const D0: u64 = 20_633;
+const NOON: u64 = D0 * DAY + DAY / 2;
+
+/// A fresh, empty folder under the system's temporary directory.
+fn scratch(name: &str) -> PathBuf {
+    static N: AtomicUsize = AtomicUsize::new(0);
+    let n = N.fetch_add(1, Ordering::SeqCst);
+    let dir = std::env::temp_dir().join(format!("visits-app-seal-{}-{name}-{n}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    dir
+}
+
+/// The envelope the start lines of these tests carry, which differs from the
+/// one a program would build today, so a test can tell where it came from.
+fn envelope() -> Envelope {
+    Envelope { app: "arkos".into(), ver: "0.4.2".into(), bin: "app".into(), os: Os::Linux, osv: 6, arch: Arch::X86_64, ch: Channel::Named("tap".into()) }
+}
+
+fn start_line(start: u64) -> String {
+    let env = json!({ "app": "arkos", "ver": "0.4.2", "bin": "app", "os": "linux", "osv": 6, "arch": "x86_64", "ch": "tap" });
+    format!("{}\n", json!({ "start": start, "env": env }))
+}
+
+fn ev_line(n: &str, t: u64, d: Value) -> String {
+    let mut ev = json!({ "n": n, "t": t });
+    if d.as_object().is_some_and(|m| !m.is_empty()) {
+        ev["d"] = d;
+    }
+    format!("{}\n", json!({ "ev": ev }))
+}
+
+fn mark_line(t: u64, focus: Value, rejected: u64) -> String {
+    format!("{}\n", json!({ "mark": { "t": t, "focus": focus, "rejected": rejected } }))
+}
+
+fn write_journal(dir: &Path, sid: &str, text: &str) -> PathBuf {
+    let folder = dir.join("journal");
+    std::fs::create_dir_all(&folder).unwrap();
+    let path = folder.join(format!("{sid}.jsonl"));
+    std::fs::write(&path, text).unwrap();
+    path
+}
+
+fn read_json(path: &Path) -> Value {
+    serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap()
+}
+
+fn event(n: &str, t: u64, d: &[(&str, DValue)]) -> Event {
+    Event { n: n.into(), t, d: d.iter().map(|(k, v)| (k.to_string(), v.clone())).collect() }
+}
+
+fn focus(pairs: &[(&str, u64)]) -> BTreeMap<String, u64> {
+    pairs.iter().map(|(k, v)| (k.to_string(), *v)).collect()
+}
+
+/// A journal of four events and two marks, started at `start`.
+fn four_events_two_marks(start: u64) -> String {
+    [
+        start_line(start),
+        ev_line("launch", 0, json!({})),
+        ev_line("pane_open", 12, json!({ "kind": "terminal", "how": "key" })),
+        mark_line(60, json!({ "editor": 40, "terminal": 15 }), 1),
+        ev_line("resize", 70, json!({ "cols": 120, "full": true })),
+        ev_line("window_open", 95, json!({})),
+        mark_line(120, json!({ "editor": 80, "terminal": 30, "settings": 5 }), 2),
+    ]
+    .concat()
+}
+
+#[test]
+fn a_journal_seals_into_the_report_it_describes() {
+    let dir = scratch("four");
+    let journal = write_journal(&dir, SID, &four_events_two_marks(NOON));
+    let mut state = State::default();
+    let now = NOON + 1840;
+
+    let path = seal(&dir, SID, End::Quit, now, &mut state).unwrap().expect("a report is queued");
+
+    assert_eq!(path, dir.join("queue").join(format!("session-{SID}.json")));
+    let iw = (D0 - D0 % 7) as i64;
+    let expected = Session {
+        env: envelope(),
+        sid: SID.into(),
+        len: 1840,
+        end: End::Quit,
+        iw,
+        rd: -1,
+        focus: focus(&[("editor", 80), ("terminal", 30), ("settings", 5)]),
+        ev: vec![
+            event("launch", 0, &[]),
+            event("pane_open", 12, &[("kind", DValue::Str("terminal".into())), ("how", DValue::Str("key".into()))]),
+            event("resize", 70, &[("cols", DValue::Int(120)), ("full", DValue::Bool(true))]),
+            event("window_open", 95, &[]),
+        ],
+        ev_dropped: 0,
+        ev_rejected: 2,
+    };
+    assert_eq!(std::fs::read(&path).unwrap(), expected.to_bytes().unwrap(), "the queued bytes are the report's bytes");
+    assert_eq!(read_json(&path)["ver"], "0.4.2", "the version that ran, from the start line");
+    assert_eq!(read_json(&dir.join("queue").join(format!("session-{SID}.retry"))), json!({ "first": now, "attempts": 0, "next": now }));
+    assert!(!journal.exists(), "the journal is deleted");
+    assert!(!dir.join("state.toml").exists(), "seal never writes the state itself");
+    assert_eq!(state.first_launch_day, Some(D0 as i64));
+    assert_eq!(state.last_report_day, Some(D0 as i64));
+    assert_eq!(state.rejected, 0);
+
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn a_journal_the_journal_wrote_seals_with_what_it_recorded() {
+    let dir = scratch("written");
+    let allow = Allowlist::from_toml("[events.launch]\n[events.pane_open]\nkind = [\"terminal\"]\n").unwrap();
+    let mut journal = Journal::open(&dir, SID, &envelope(), allow, NOON).unwrap();
+    journal.event(event("launch", 0, &[]), NOON);
+    journal.event(event("pane_open", 0, &[("kind", DValue::Str("terminal".into()))]), NOON + 12);
+    journal.event(event("not_listed", 0, &[]), NOON + 20);
+    journal.focus("terminal", 40);
+    journal.mark(NOON + 60).unwrap();
+    drop(journal);
+    let mut state = State::default();
+
+    let path = seal(&dir, SID, End::Lost, NOON + 9000, &mut state).unwrap().unwrap();
+
+    let report = read_json(&path);
+    assert_eq!(report["ev"], json!([{ "n": "launch", "t": 0 }, { "n": "pane_open", "t": 12, "d": { "kind": "terminal" } }]));
+    assert_eq!(report["focus"], json!({ "terminal": 40 }));
+    assert_eq!(report["ev_rejected"], 1);
+    assert_eq!(report["len"], 60);
+    assert_eq!(report["ch"], "tap");
+
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn a_journal_without_a_mark_seals_with_an_empty_focus() {
+    let dir = scratch("nomark");
+    write_journal(&dir, SID, &[start_line(NOON), ev_line("launch", 0, json!({})), ev_line("window_open", 30, json!({}))].concat());
+    let mut state = State::default();
+
+    let path = seal(&dir, SID, End::Quit, NOON + 45, &mut state).unwrap().unwrap();
+
+    let report = read_json(&path);
+    assert_eq!(report["focus"], json!({}));
+    assert_eq!(report["ev_rejected"], 0);
+    assert_eq!(report["len"], 45);
+    assert_eq!(report["ev"].as_array().unwrap().len(), 2);
+
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn a_cut_last_line_and_a_garbled_line_are_ignored() {
+    let dir = scratch("cut");
+    let text = [
+        start_line(NOON),
+        ev_line("launch", 0, json!({})),
+        "{\"ev\": {\"n\": \"pane_\n".to_string(),
+        ev_line("window_open", 30, json!({})),
+        // A whole object without its newline was cut before the newline landed.
+        json!({ "ev": { "n": "late", "t": 99 } }).to_string(),
+    ]
+    .concat();
+    write_journal(&dir, SID, &text);
+    let mut state = State::default();
+
+    let path = seal(&dir, SID, End::Lost, NOON + 5000, &mut state).unwrap().unwrap();
+
+    let report = read_json(&path);
+    let names: Vec<&str> = report["ev"].as_array().unwrap().iter().map(|e| e["n"].as_str().unwrap()).collect();
+    assert_eq!(names, ["launch", "window_open"]);
+    assert_eq!(report["len"], 30, "the cut line's t does not count");
+
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn a_lost_session_lasts_until_the_last_time_the_journal_saw() {
+    let dir = scratch("lost");
+    write_journal(&dir, SID, &four_events_two_marks(NOON));
+    let mut state = State::default();
+
+    let path = seal(&dir, SID, End::Lost, NOON + 7 * 3600, &mut state).unwrap().unwrap();
+    let report = read_json(&path);
+    assert_eq!(report["len"], 120, "the last mark's t, not the sealing time");
+    assert_eq!(report["end"], "lost");
+
+    // An event after the last mark is the last time seen.
+    let sid = "aaaaaaaaaaaaaaaa";
+    write_journal(&dir, sid, &[four_events_two_marks(NOON), ev_line("window_open", 150, json!({}))].concat());
+    let path = seal(&dir, sid, End::Unknown, NOON + 7 * 3600, &mut state).unwrap().unwrap();
+    assert_eq!(read_json(&path)["len"], 150);
+    assert_eq!(read_json(&path)["end"], "unknown");
+
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn rd_is_minus_one_the_first_time_and_the_day_difference_after() {
+    let dir = scratch("rd");
+    let mut state = State::default();
+
+    write_journal(&dir, SID, &four_events_two_marks(NOON));
+    let first = seal(&dir, SID, End::Quit, NOON + 600, &mut state).unwrap().unwrap();
+    assert_eq!(read_json(&first)["rd"], -1);
+
+    let later = NOON + 3 * DAY;
+    let sid = "bbbbbbbbbbbbbbbb";
+    write_journal(&dir, sid, &four_events_two_marks(later));
+    let second = seal(&dir, sid, End::Quit, later + 600, &mut state).unwrap().unwrap();
+    assert_eq!(read_json(&second)["rd"], 3);
+    assert_eq!(state.last_report_day, Some(D0 as i64 + 3));
+
+    let sid = "cccccccccccccccc";
+    write_journal(&dir, sid, &four_events_two_marks(later + 900));
+    let third = seal(&dir, sid, End::Quit, later + 1200, &mut state).unwrap().unwrap();
+    assert_eq!(read_json(&third)["rd"], 0, "the same day");
+
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn iw_is_a_week_and_is_set_once() {
+    let dir = scratch("iw");
+    let mut state = State::default();
+
+    write_journal(&dir, SID, &four_events_two_marks(NOON));
+    let first = seal(&dir, SID, End::Quit, NOON + 600, &mut state).unwrap().unwrap();
+    let iw = read_json(&first)["iw"].as_i64().unwrap();
+    assert_eq!(iw % 7, 0);
+    assert_eq!(iw, D0 as i64 - (D0 as i64) % 7);
+    assert_eq!(state.first_launch_day, Some(D0 as i64));
+
+    let weeks_on = NOON + 30 * DAY;
+    let sid = "dddddddddddddddd";
+    write_journal(&dir, sid, &four_events_two_marks(weeks_on));
+    let second = seal(&dir, sid, End::Quit, weeks_on + 600, &mut state).unwrap().unwrap();
+    assert_eq!(read_json(&second)["iw"].as_i64().unwrap(), iw, "the install week never moves");
+    assert_eq!(state.first_launch_day, Some(D0 as i64));
+
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn a_session_the_wire_refuses_is_dropped_and_counted() {
+    let dir = scratch("refused");
+    let text = start_line(NOON).replace("\"tap\"", "\"source\"") + &ev_line("launch", 0, json!({}));
+    let journal = write_journal(&dir, SID, &text);
+    let mut state = State { rejected: 4, ..State::default() };
+
+    assert_eq!(seal(&dir, SID, End::Quit, NOON + 60, &mut state).unwrap(), None);
+
+    assert_eq!(state.rejected, 5);
+    assert_eq!(state.last_report_day, None, "nothing was reported");
+    assert!(!journal.exists());
+    let queued = std::fs::read_dir(dir.join("queue")).map(|r| r.count()).unwrap_or(0);
+    assert_eq!(queued, 0, "nothing is queued");
+
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn a_journal_without_a_start_line_is_discarded() {
+    let dir = scratch("nostart");
+    let journal = write_journal(&dir, SID, &[ev_line("launch", 0, json!({})), mark_line(60, json!({}), 0)].concat());
+    let mut state = State::default();
+
+    assert_eq!(seal(&dir, SID, End::Quit, NOON, &mut state).unwrap(), None);
+    assert!(!journal.exists());
+    assert_eq!(state, State::default(), "a discarded journal changes no count and no day");
+
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn a_missing_journal_seals_to_nothing_and_a_bad_sid_is_refused() {
+    let dir = scratch("missing");
+    let mut state = State::default();
+    assert_eq!(seal(&dir, SID, End::Quit, NOON, &mut state).unwrap(), None);
+    assert_eq!(seal(&dir, "../../etc/passwd", End::Quit, NOON, &mut state).unwrap_err().kind(), ErrorKind::InvalidInput);
+    assert_eq!(state, State::default());
+
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn seal_stale_seals_the_old_journal_and_leaves_the_fresh_one() {
+    let dir = scratch("stale");
+    let now = NOON + 10 * DAY;
+    let old = "1111111111111111";
+    let fresh = "2222222222222222";
+    // Started two days ago and last seen 120 seconds later.
+    let old_journal = write_journal(&dir, old, &four_events_two_marks(now - 2 * DAY));
+    // Started 30 hours ago but last seen 10 hours ago: still within the day.
+    let fresh_text = [four_events_two_marks(now - 30 * 3600), mark_line(20 * 3600, json!({ "editor": 900 }), 2)].concat();
+    let fresh_journal = write_journal(&dir, fresh, &fresh_text);
+    let mut state = State::default();
+
+    let sealed = seal_stale(&dir, now, DAY, &mut state).unwrap();
+
+    assert_eq!(sealed, vec![dir.join("queue").join(format!("session-{old}.json"))]);
+    let report = read_json(&sealed[0]);
+    assert_eq!(report["end"], "unknown");
+    assert_eq!(report["len"], 120);
+    assert!(!old_journal.exists());
+    assert!(fresh_journal.exists(), "a journal seen within the day is left alone");
+
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn seal_stale_without_a_journal_folder_seals_nothing() {
+    let dir = scratch("stale-empty");
+    let mut state = State::default();
+    assert_eq!(seal_stale(&dir, NOON, DAY, &mut state).unwrap(), Vec::<PathBuf>::new());
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn the_state_round_trips_through_its_file() {
+    let dir = scratch("state");
+    assert_eq!(State::load(&dir), State::default(), "no file is the default");
+
+    let state = State { first_launch_day: Some(20_633), last_report_day: Some(20_640), last_check_day: None, rejected: 3, sent: 12 };
+    state.save(&dir).unwrap();
+    assert_eq!(State::load(&dir), state);
+    let names: Vec<String> = std::fs::read_dir(&dir).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().into_owned()).collect();
+    assert_eq!(names, ["state.toml"], "the temp file is renamed away");
+
+    std::fs::write(dir.join("state.toml"), "not = [toml").unwrap();
+    assert_eq!(State::load(&dir), State::default(), "an unreadable file is the default");
+
+    std::fs::remove_dir_all(&dir).unwrap();
+}

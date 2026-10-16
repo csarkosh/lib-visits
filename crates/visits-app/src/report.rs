@@ -27,6 +27,16 @@ impl Os {
             Os::Windows => "windows",
         }
     }
+
+    /// Reads the wire spelling back; anything else is `None`.
+    pub fn from_wire(s: &str) -> Option<Os> {
+        match s {
+            "macos" => Some(Os::Macos),
+            "linux" => Some(Os::Linux),
+            "windows" => Some(Os::Windows),
+            _ => None,
+        }
+    }
 }
 
 /// The processor architecture a program was built for.
@@ -42,6 +52,15 @@ impl Arch {
         match self {
             Arch::Arm64 => "arm64",
             Arch::X86_64 => "x86_64",
+        }
+    }
+
+    /// Reads the wire spelling back; anything else is `None`.
+    pub fn from_wire(s: &str) -> Option<Arch> {
+        match s {
+            "arm64" => Some(Arch::Arm64),
+            "x86_64" => Some(Arch::X86_64),
+            _ => None,
         }
     }
 }
@@ -62,6 +81,16 @@ impl Channel {
             Channel::Release => "release",
             Channel::Source => "source",
             Channel::Named(name) => name,
+        }
+    }
+
+    /// Reads the wire spelling back: `release` and `source` are their variants
+    /// and any other name is `Named`, left for `to_bytes` to check.
+    pub fn from_wire(s: &str) -> Channel {
+        match s {
+            "release" => Channel::Release,
+            "source" => Channel::Source,
+            other => Channel::Named(other.to_string()),
         }
     }
 
@@ -114,6 +143,22 @@ impl Envelope {
         m.insert("k".into(), Value::from(k));
         m
     }
+
+    /// Reads back the seven keys `to_map` writes, as a journal's start line
+    /// keeps them; any other key is ignored. `None` when one is missing or is
+    /// not of its type, or when `os` or `arch` is outside its set.
+    pub(crate) fn from_map(m: &Map<String, Value>) -> Option<Envelope> {
+        let s = |k: &str| m.get(k).and_then(Value::as_str);
+        Some(Envelope {
+            app: s("app")?.to_string(),
+            ver: s("ver")?.to_string(),
+            bin: s("bin")?.to_string(),
+            os: Os::from_wire(s("os")?)?,
+            osv: u32::try_from(m.get("osv")?.as_u64()?).ok()?,
+            arch: Arch::from_wire(s("arch")?)?,
+            ch: Channel::from_wire(s("ch")?),
+        })
+    }
 }
 
 /// A value in an event's `d`.
@@ -153,6 +198,26 @@ impl Event {
             m.insert("d".into(), Value::Object(d));
         }
         Value::Object(m)
+    }
+
+    /// Reads back what `to_value` writes. `None` when `n` or `t` is missing or
+    /// of the wrong type, or a `d` value is not a string, an `i64` or a boolean.
+    pub(crate) fn from_value(v: &Value) -> Option<Event> {
+        let n = v.get("n")?.as_str()?.to_string();
+        let t = v.get("t")?.as_u64()?;
+        let mut d = BTreeMap::new();
+        if let Some(map) = v.get("d") {
+            for (k, v) in map.as_object()? {
+                let value = match v {
+                    Value::String(s) => DValue::Str(s.clone()),
+                    Value::Bool(b) => DValue::Bool(*b),
+                    Value::Number(i) => DValue::Int(i.as_i64()?),
+                    _ => return None,
+                };
+                d.insert(k.clone(), value);
+            }
+        }
+        Some(Event { n, t, d })
     }
 }
 
