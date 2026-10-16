@@ -1,5 +1,6 @@
 //! The client half of lib-visits for an installed program: the typed reports of
-//! the wire spec's section 6 and the consent mode. The crate is pure: it opens
+//! the wire spec's section 6, the consent mode, the journal, the queue, the
+//! daily update check and the view of it all. The crate is pure: it opens
 //! no connection, reads no clock and starts no thread; the program supplies the
 //! time and the transport.
 //!
@@ -52,14 +53,63 @@
 //! `mode` turns the person's settings, the environment and the build's channel
 //! into what may be recorded and sent. Its default is `Local`: recorded on the
 //! person's disk, nothing sent until they say so.
+//!
+//! `Check::next` says whether the update fetch the program is about to make is
+//! the day's check: `Some` once a UTC day, with `rd` the days since the last
+//! one (`-1` the first time), and never for a source build. The program sends
+//! that one fetch through the collector with `Check::to_query` as its query,
+//! the rest of the day's straight to its update source, and records the check
+//! with `State::checked` whatever it answered. The check needs no consent: the
+//! person installed a self-updating program.
+//!
+//! `view` reads the folder for the program's `telemetry view` command: the
+//! mode, the state, each queued report with its failed attempts and next time,
+//! the session sealed last and the journals present; `payload_of` gives the
+//! bytes of any one of them, for a "Show report" button.
+//!
+//! The program's loop, in its own threads and timers, with `dir` its folder
+//! for the crate and `now()` the unix seconds:
+//!
+//! ```no_run
+//! # use std::path::Path;
+//! # use visits_app::*;
+//! # struct Http;
+//! # impl Transport for Http { fn post(&self, _: &str, _: &str, _: &[u8]) -> Result<u16, String> { Ok(204) } }
+//! # fn now() -> u64 { 0 }
+//! # fn fetch(_: &str) {}
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! # let (dir, sid, http, ua) = (Path::new("/tmp/arkos"), "3f9a1c27b84d5e60", Http, "arkos/0.4.2");
+//! # let env = Envelope { app: "arkos".into(), ver: "0.4.2".into(), bin: "app".into(), os: Os::Macos, osv: 15, arch: Arch::Arm64, ch: Channel::Release };
+//! # let allow = Allowlist::from_toml("[events.window_open]")?;
+//! # let mode = mode(&Settings::default(), &|k| std::env::var(k).ok(), "ARKOS_TELEMETRY", &env.ch, true);
+//! # let (collector, updates) = ("https://visits.example.com/a", "https://example.com/arkos/latest.json");
+//! // At launch, seal what a lost process left over a day ago and open this session's journal.
+//! let mut state = State::load(dir);
+//! seal_stale(dir, now(), 86_400, &mut state)?; state.save(dir)?;
+//! let mut journal = Journal::open(dir, sid, &env, allow, now())?;
+//! // Each minute, the focus totals are flushed.
+//! journal.mark(now())?;
+//! // When the process ends, its journal becomes a report in the queue.
+//! seal(dir, sid, End::Quit, now(), &mut state)?; state.save(dir)?;
+//! // Every 15 minutes, the queue posts what the mode lets leave.
+//! Queue::new(dir).drain(&http, collector, ua, &mode, now(), &mut state); state.save(dir)?;
+//! // Before an update fetch, the day's first goes through the collector.
+//! match Check::next(&env, &state, now()) {
+//!     Some(check) => { fetch(&format!("{collector}/check?{}", check.to_query()?)); state.checked(now()); state.save(dir)?; }
+//!     None => fetch(updates),
+//! }
+//! # Ok(()) }
+//! ```
 
 pub mod allowlist;
+mod check;
 pub mod journal;
 pub mod mode;
 pub mod queue;
 pub mod report;
 pub mod seal;
 pub mod state;
+pub mod view;
 
 pub use allowlist::{Allowlist, Rejected};
 pub use journal::Journal;
@@ -68,4 +118,5 @@ pub use queue::{Outcome, Queue, Transport};
 pub use report::{Arch, Channel, Check, Crash, CrashKind, DValue, End, Envelope, Event, Memory, Os, Session, Uptime};
 pub use seal::{seal, seal_stale};
 pub use state::State;
+pub use view::{payload_of, view, View};
 pub use visits_core::Invalid;

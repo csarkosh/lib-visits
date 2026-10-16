@@ -125,7 +125,7 @@ impl Queue {
     /// The files in the queue's folder with this extension, sorted by name, so
     /// `x.json.tmp`, a write in progress, is never one. Empty when the folder
     /// does not exist or cannot be read.
-    fn files(&self, extension: &str) -> Vec<PathBuf> {
+    pub(crate) fn files(&self, extension: &str) -> Vec<PathBuf> {
         let Ok(entries) = fs::read_dir(self.folder()) else { return Vec::new() };
         let mut files: Vec<PathBuf> = entries
             .filter_map(|e| e.ok().map(|e| e.path()))
