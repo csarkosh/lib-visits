@@ -36,7 +36,7 @@
 
 ## Review Focus
 
-1. A report with a key the schema does not know, at the top level, in an event's `d`, in `focus`, or a top-level `s` or `time`, answers `400` and nothing is written. Pinned in Task 2 and Task 3a.
+1. A report with a key the schema does not know, at the top level, inside an event beside `n`, `t` and `d`, or a top-level `s` or `time`, answers `400` and nothing is written. (`d` and `focus` keys are the program's own names: the wire checks their pattern, the program's allowlist their meaning.) Pinned in Task 2 and Task 3a.
 2. A check whose `rd` is missing, below `-1`, or not an integer answers `400` and is not written; a valid one is written before the redirect is answered, so a client that does not follow redirects still counts. Pinned in Task 3a.
 3. The `source` channel is refused by the collector (`403`) and skipped by the crate (`uploads: false`, reason `source build`) independently. Pinned in Task 3a and Task 4.
 4. `mode` never yields `uploads: true` from an empty `Settings`: the default is `Local`. `DO_NOT_TRACK=0` and `DO_NOT_TRACK=false` do not disable. `<APP>_TELEMETRY=log` forces `uploads: false`. Pinned in Task 4.
