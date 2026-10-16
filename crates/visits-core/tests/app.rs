@@ -1,5 +1,5 @@
 use serde_json::{json, Value};
-use visits_core::{app_of, channel_of, decorate_report, kind_of, validate_check, validate_report, Invalid};
+use visits_core::{app_of, channel_of, decorate_report, kind_of, validate_check, validate_report, validate_report_allowing_source, Invalid};
 
 fn fixture(name: &str) -> Value {
     let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../spec/fixtures/app/");
@@ -256,4 +256,23 @@ fn the_public_matchers_are_the_walks_own() {
     assert!(!is_value("a b") && !is_value("a+b") && !is_value(&"a".repeat(65)));
     assert!(is_hex("3f9a1c27b84d5e60", 16, 32) && is_hex(&"a".repeat(32), 16, 32));
     assert!(!is_hex("3F9A1C27B84D5E60", 16, 32) && !is_hex("../x", 16, 32) && !is_hex(&"a".repeat(33), 16, 32));
+}
+
+#[test]
+fn the_client_entry_allows_a_source_report_and_the_collector_entry_does_not() {
+    let mut f = fixture("session");
+    f["ch"] = json!("source");
+    let body = f.to_string();
+    let r = validate_report_allowing_source(body.as_bytes()).unwrap();
+    assert_eq!(r.fields["ch"], "source");
+    assert_eq!(validate_report(body.as_bytes()), Err(Invalid::Channel));
+}
+
+#[test]
+fn the_client_entry_still_names_the_real_error_of_a_source_report() {
+    let mut f = fixture("session");
+    f["ch"] = json!("source");
+    f["extra"] = json!(1);
+    assert_eq!(validate_report_allowing_source(f.to_string().as_bytes()), Err(Invalid::Unknown("extra".into())));
+    assert_eq!(validate_report_allowing_source(b"{"), Err(Invalid::Json));
 }

@@ -9,7 +9,7 @@ pub mod event;
 pub mod validate;
 pub mod visit;
 
-pub use app::{app_of, channel_of, decorate_report, kind_of, validate_check, validate_report, AppDecoration, AppReport};
+pub use app::{app_of, channel_of, decorate_report, kind_of, validate_check, validate_report, validate_report_allowing_source, AppDecoration, AppReport};
 pub use classify::{browser_of, host_key, is_crawler, os_of, split_referrer};
 pub use clock::{rfc3339, rfc3339_ms, ymd};
 pub use decorate::{decorate, RequestFacts};

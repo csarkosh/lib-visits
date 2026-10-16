@@ -16,7 +16,7 @@
 use serde_json::{Map, Value};
 use std::collections::BTreeMap;
 use visits_core::app::MAX_EVENTS;
-use visits_core::{validate_check, validate_report, Invalid};
+use visits_core::{validate_check, validate_report_allowing_source, Invalid};
 
 /// The operating system a program runs on.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -550,25 +550,8 @@ fn allow_source<T>(result: Result<T, Invalid>) -> Result<(), Invalid> {
 /// Validates a report's bytes, a source channel allowed, and returns the
 /// checked fields when `k` is `kind`; another kind is `Invalid::Kind`.
 fn validated(bytes: &[u8], kind: &str) -> Result<Map<String, Value>, Invalid> {
-    let fields = match validate_report(bytes) {
-        Ok(r) => r.fields,
-        // The walk has no fields to give for a source report, so it is read again without the channel check.
-        Err(Invalid::Channel) => source_fields(bytes)?,
-        Err(e) => return Err(e),
-    };
+    let fields = validate_report_allowing_source(bytes)?.fields;
     if fields.get("k").and_then(Value::as_str) == Some(kind) { Ok(fields) } else { Err(Invalid::Kind) }
-}
-
-/// The fields of a report that is valid but for its source channel: the same
-/// bytes with `ch` set to a release channel pass the walk, which checked every
-/// other key.
-fn source_fields(bytes: &[u8]) -> Result<Map<String, Value>, Invalid> {
-    let mut v: Value = serde_json::from_slice(bytes).map_err(|_| Invalid::Json)?;
-    let obj = v.as_object_mut().ok_or(Invalid::Json)?;
-    obj.insert("ch".into(), Value::from("release"));
-    let mut fields = validate_report(&serde_json::to_vec(&v).map_err(|_| Invalid::Json)?)?.fields;
-    fields.insert("ch".into(), Value::from("source"));
-    Ok(fields)
 }
 
 /// A string field of a validated report.
@@ -580,7 +563,7 @@ fn text(m: &Map<String, Value>, key: &str) -> Result<String, Invalid> {
 fn checked(m: Map<String, Value>) -> Result<Vec<u8>, Invalid> {
     // Serializing a map of strings, numbers and booleans cannot fail.
     let bytes = serde_json::to_vec(&Value::Object(m)).map_err(|_| Invalid::Json)?;
-    allow_source(validate_report(&bytes))?;
+    validate_report_allowing_source(&bytes)?;
     Ok(bytes)
 }
 

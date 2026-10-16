@@ -356,7 +356,7 @@ fn walk(obj: &Map<String, Value>, tables: &[&[Field]], prefix: &str) -> Result<M
 /// One report or check as a JSON object. `v` is read first and `k` second, since
 /// `k` chooses the table; `ch == "source"` is read last, so a malformed report
 /// from a source build is still `400` and only a valid one is `403`.
-fn report(obj: &Map<String, Value>, is_check: bool) -> Result<AppReport, Invalid> {
+fn report(obj: &Map<String, Value>, is_check: bool, allow_source: bool) -> Result<AppReport, Invalid> {
     match obj.get("v") {
         None => return Err(Invalid::Missing("v")),
         Some(v) => check_value(Kind::Two, v, "v")?,
@@ -373,16 +373,29 @@ fn report(obj: &Map<String, Value>, is_check: bool) -> Result<AppReport, Invalid
     };
     if (k == "check") != is_check { return Err(Invalid::Kind); }
     let fields = walk(obj, &[ENVELOPE, table], "")?;
-    if fields.get("ch").and_then(Value::as_str) == Some("source") { return Err(Invalid::Channel); }
+    if !allow_source && fields.get("ch").and_then(Value::as_str) == Some("source") { return Err(Invalid::Channel); }
     Ok(AppReport { fields, s: None, time: None })
 }
 
 /// A POST body: exactly one report object. An array, or anything that is not
-/// an object, is malformed; a check (`k: "check"`) is the wrong kind.
+/// an object, is malformed; a check (`k: "check"`) is the wrong kind. A report
+/// from a source build is `Invalid::Channel`, which is the collector's `403`.
 pub fn validate_report(body: &[u8]) -> Result<AppReport, Invalid> {
+    parse_report(body, false)
+}
+
+/// `validate_report` without its last check: a report from a source build is
+/// `Ok` when everything else is valid. This is the client side's entry, for
+/// reading back a report the program wrote itself; the collector keeps
+/// `validate_report` and so keeps refusing the source channel.
+pub fn validate_report_allowing_source(body: &[u8]) -> Result<AppReport, Invalid> {
+    parse_report(body, true)
+}
+
+fn parse_report(body: &[u8], allow_source: bool) -> Result<AppReport, Invalid> {
     let text = std::str::from_utf8(body).map_err(|_| Invalid::Json)?;
     match serde_json::from_str::<Value>(text).map_err(|_| Invalid::Json)? {
-        Value::Object(obj) => report(&obj, false),
+        Value::Object(obj) => report(&obj, false, allow_source),
         _ => Err(Invalid::Json),
     }
 }
@@ -415,7 +428,7 @@ pub fn validate_check(query: &str) -> Result<AppReport, Invalid> {
         };
         obj.insert(key, value);
     }
-    report(&obj, true)
+    report(&obj, true, false)
 }
 
 /// Adds `s` (`sv` 2 and the time of receipt in whole seconds) and `time` (the
