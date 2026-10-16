@@ -84,11 +84,13 @@ pub fn parse_app(s: &str) -> Result<(String, Option<String>), String> {
     Ok((name.to_string(), redirect.map(str::to_string)))
 }
 
-/// Refuses a route path that holds `{`, `}` or `:`, which axum 0.8 reads as a
-/// capture (and panics on in the old `:x` spelling), so the flag names a literal path.
+/// Refuses a route path in axum 0.8's capture syntax, so the flag names a
+/// literal path: a `{` or `}` anywhere (a capture), or a segment that starts
+/// with `:` or `*` (the old spellings, which axum panics on). A `:` or `*`
+/// inside a segment is literal, so `/v:1` stays a valid path.
 pub fn check_route(flag: &str, path: &str) -> Result<(), String> {
-    if path.contains(['{', '}', ':']) {
-        return Err(format!("{flag} must not contain {{, }} or :, got {path}"));
+    if path.contains(['{', '}']) || path.split('/').any(|seg| seg.starts_with([':', '*'])) {
+        return Err(format!("{flag} must not contain {{ or }} or a segment starting with : or *, got {path}"));
     }
     Ok(())
 }
@@ -154,12 +156,14 @@ mod tests {
     }
     #[test]
     fn route_paths_refuse_axum_capture_syntax() {
-        for bad in ["/{x}", "/a{", "/a}", "/:x", "/a:b"] {
+        for bad in ["/{x}", "/a{", "/a}", "/:x", "/a/:x", "/*x", "/a/*rest"] {
             assert!(check_route("--path", bad).is_err(), "{bad:?}");
             assert!(check_paths("/v", bad).is_err(), "{bad:?}");
             assert!(check_paths(bad, "/a").is_err(), "{bad:?}");
         }
-        assert!(check_route("--path", "/v").is_ok());
-        assert!(check_route("--path", "/my-app_2/v.1").is_ok());
+        // A colon or a star inside a segment is literal to axum 0.8.
+        for good in ["/v", "/my-app_2/v.1", "/v:1", "/a/b:c", "/a*b"] {
+            assert!(check_route("--path", good).is_ok(), "{good:?}");
+        }
     }
 }

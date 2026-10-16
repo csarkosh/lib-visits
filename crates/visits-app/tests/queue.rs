@@ -113,10 +113,13 @@ fn crash(inc: &str) -> Crash {
     }
 }
 
-/// One drain at `now` with these answers, returning the outcome and the transport.
+/// One drain at `now` with these answers, returning the outcome and the
+/// transport, its counts added to `state` afterwards as the program adds them.
 fn drain(dir: &Path, answers: &[Result<u16, String>], m: &Mode, now: u64, state: &mut State) -> (Outcome, Fake) {
     let fake = Fake::answering(answers);
-    let outcome = Queue::new(dir).drain(&fake, URL, UA, m, now, state);
+    let outcome = Queue::new(dir).drain(&fake, URL, UA, m, now);
+    state.sent += outcome.sent as u64;
+    state.rejected += outcome.rejected as u64;
     (outcome, fake)
 }
 
@@ -477,14 +480,29 @@ fn stray_temp_files_are_removed_from_the_queue_and_the_folder() {
     let dir = scratch("tmp");
     put(&dir, SESSION, fresh(NOW));
     let queue = dir.join("queue");
-    let stray = [queue.join(format!("{SESSION}.json.tmp")), queue.join(format!("{CRASH}.retry.tmp")), dir.join("state.toml.4242.tmp")];
+    let stray = [
+        queue.join(format!("{SESSION}.json.tmp")),
+        queue.join(format!("{CRASH}.retry.tmp")),
+        queue.join("anything.tmp"),
+        dir.join("state.toml.4242.tmp"),
+        dir.join("last-session.json.tmp"),
+    ];
     for path in &stray {
         touch(path, NOW - 2 * 3_600);
     }
-    // A write in progress, from the last hour, is left to finish.
-    let fresh_tmp = [queue.join("crash-0000000000000001.json.tmp"), dir.join("state.toml.4343.tmp")];
-    for path in &fresh_tmp {
-        touch(path, NOW - 60);
+    // A write in progress, from the last hour, is left to finish, and in the
+    // folder itself only the crate's own names are its to remove.
+    let fresh_tmp = [
+        queue.join("crash-0000000000000001.json.tmp"),
+        dir.join("state.toml.4343.tmp"),
+        dir.join("notes.tmp"),
+        dir.join("state.toml.tmp.tmp"),
+        dir.join("other.json.tmp"),
+    ];
+    touch(&fresh_tmp[0], NOW - 60);
+    touch(&fresh_tmp[1], NOW - 60);
+    for path in &fresh_tmp[2..] {
+        touch(path, NOW - 2 * 3_600);
     }
     let local = mode_for(Settings::default(), &[]);
     let (outcome, _) = drain(&dir, &[Ok(204)], &local, NOW, &mut State::default());
@@ -498,28 +516,44 @@ fn stray_temp_files_are_removed_from_the_queue_and_the_folder() {
     std::fs::remove_dir_all(&dir).unwrap();
 }
 
+/// Writes `<dir>/queue/<name>.json` with these bytes and a companion due at `next`.
+fn put_bytes(dir: &Path, name: &str, bytes: &[u8], next: u64) -> PathBuf {
+    let path = put(dir, name, Some(json!({ "first": NOW, "attempts": 0, "next": next })));
+    std::fs::write(&path, bytes).unwrap();
+    path
+}
+
+const SOURCE_BYTES: &[u8] = br#"{"v":2,"app":"arkos","ch":"source","k":"session"}"#;
+
 #[test]
-fn a_queued_source_report_is_dropped_and_never_posted() {
+fn a_due_source_report_is_dropped_before_it_could_be_posted() {
     let dir = scratch("source-report");
-    let queue = dir.join("queue");
-    std::fs::create_dir_all(&queue).unwrap();
-    let source = queue.join(format!("{SESSION}.json"));
-    let source_bytes = br#"{"v":2,"app":"arkos","ch":"source","k":"session"}"#;
-    std::fs::write(&source, source_bytes).unwrap();
-    std::fs::write(source.with_extension("retry"), fresh(NOW).unwrap().to_string()).unwrap();
+    let source = put_bytes(&dir, SESSION, SOURCE_BYTES, NOW);
+    // Not yet due: the post path never reaches it, and the sweep leaves it.
+    let later = put_bytes(&dir, "session-0000000000000009", SOURCE_BYTES, NOW + 1);
     // A `d` key named `ch` is the program's own and says nothing of the build.
-    let release = queue.join(format!("{CRASH}.json"));
-    std::fs::write(&release, br#"{"v":2,"app":"arkos","ch":"release","k":"crash","ev":[{"d":{"ch":"source"}}]}"#).unwrap();
-    std::fs::write(release.with_extension("retry"), fresh(NOW).unwrap().to_string()).unwrap();
-    for m in [on(), mode_for(Settings { usage: Some(Usage::On), crashes: Some(Crashes::Always) }, &[(VAR, "log")])] {
-        let mut state = State::default();
-        let fake = Fake::answering(&[Err("offline".into())]);
-        let outcome = Queue::new(&dir).drain(&fake, URL, UA, &m, NOW, &mut state);
-        assert_eq!(outcome.dropped, if m.log { 0 } else { 1 }, "dropped once, on the first drain");
-        assert!(fake.calls.borrow().iter().all(|(_, _, body)| body.as_slice() != source_bytes.as_slice()));
-        assert!(!source.exists() && !source.with_extension("retry").exists());
-        assert!(release.exists());
-    }
+    let release = put_bytes(&dir, CRASH, br#"{"v":2,"app":"arkos","ch":"release","k":"crash","ev":[{"d":{"ch":"source"}}]}"#, NOW);
+    let (outcome, fake) = drain(&dir, &[Ok(204)], &on(), NOW, &mut State::default());
+    assert_eq!(outcome, Outcome { sent: 1, dropped: 1, ..Outcome::default() });
+    assert_eq!(fake.calls(), 1);
+    assert!(fake.calls.borrow().iter().all(|(_, _, body)| body.as_slice() != SOURCE_BYTES));
+    assert!(!source.exists() && !source.with_extension("retry").exists());
+    assert!(!release.exists(), "sent");
+    assert!(later.exists());
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn a_source_build_under_log_keeps_its_reports_to_print() {
+    let dir = scratch("source-log");
+    let source = put_bytes(&dir, SESSION, SOURCE_BYTES, NOW);
+    let env = |k: &str| (k == VAR).then(|| "log".to_string());
+    let m = mode(&Settings { usage: Some(Usage::On), crashes: Some(Crashes::Always) }, &env, VAR, &Channel::Source, true);
+    assert!(m.log);
+    let (outcome, fake) = drain(&dir, &[Ok(204)], &m, NOW, &mut State::default());
+    assert_eq!(outcome, Outcome { skipped: 1, ..Outcome::default() });
+    assert_eq!(fake.calls(), 0);
+    assert_eq!(std::fs::read(&source).unwrap(), SOURCE_BYTES);
     std::fs::remove_dir_all(&dir).unwrap();
 }
 

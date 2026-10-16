@@ -6,11 +6,12 @@
 //! The one refusal they let through is the source channel (`Invalid::Channel`,
 //! which the collector reads only after every other check has passed): a source
 //! build records, seals and queues like any other, so a developer can read their
-//! own journal, the session sealed last and the queue until the next drain. The
-//! guards that keep it from uploading are `mode()`, which never allows uploads
-//! for a source build, `Queue::drain`, which deletes a queued report whose `ch`
-//! is `source` whatever build drains it, and the collector, which answers it
-//! `403`.
+//! own journal, the session sealed last and the queue until the next drain that
+//! may post (a drain under `log` prints it and keeps it). The guards that keep
+//! it from uploading are `mode()`, which never allows uploads for a source
+//! build, `Queue::drain`, which deletes a due report whose `ch` is `source`
+//! before it could reach the transport, whatever build drains it, and the
+//! collector, which answers it `403`.
 
 use serde_json::{Map, Value};
 use std::collections::BTreeMap;

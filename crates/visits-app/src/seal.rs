@@ -124,8 +124,9 @@ fn remove_if_present(path: &Path) -> io::Result<()> {
 /// without a start line (deleted), or a session the wire would refuse, such as
 /// one whose journal names a channel outside the name pattern (deleted and
 /// counted in `state.rejected`). A source build's session is queued like any
-/// other; `mode()` keeps it from uploading and the next `drain` deletes it. A
-/// `sid` that is not 16 to 32 lowercase hex characters is `InvalidInput`.
+/// other; `mode()` keeps it from uploading and the next `drain` that is not
+/// under `log` deletes it. A `sid` that is not 16 to 32 lowercase hex
+/// characters is `InvalidInput`.
 pub fn seal(dir: &Path, sid: &str, end: End, now: u64, state: &mut State) -> io::Result<Option<PathBuf>> {
     if !is_hex(sid, 16, 32) {
         return Err(io::Error::new(io::ErrorKind::InvalidInput, "a session id is 16 to 32 lowercase hex characters"));

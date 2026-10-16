@@ -24,7 +24,7 @@
 use crate::mode::{Crashes, Mode};
 use crate::report::Crash;
 use crate::retry::{write_whole, Retry};
-use crate::state::{State, DAY};
+use crate::state::DAY;
 use serde_json::Value;
 use std::fs;
 use std::io;
@@ -60,9 +60,9 @@ pub struct Queue {
 /// `failed` are rescheduled (`429`, `5xx`, an error, or any other status that
 /// is neither success nor refusal); `rejected` the collector refused (another
 /// `4xx`), deleted; `dropped` were deleted unsent, a report older than seven
-/// days, a companion without its report, or a report from a source build;
+/// days, a companion without its report, or a due report from a source build;
 /// `skipped` were due but kept, since the mode does not let them leave or only
-/// logs them.
+/// logs them. The program adds `sent` and `rejected` to its `State`.
 #[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]
 pub struct Outcome {
     pub sent: usize,
@@ -160,41 +160,46 @@ impl Queue {
     }
 
     /// Posts each report due at `now` that the mode lets leave, and returns
-    /// what happened to each. `state.sent` and `state.rejected` count what the
-    /// collector accepted and refused; the caller saves `state` afterwards,
-    /// since `drain` never writes `state.toml`.
+    /// what happened to each. It takes no `State`, so the program does not hold
+    /// the state file across the transport's calls: it adds the outcome's
+    /// `sent` and `rejected` to the state afterwards, with
+    /// `State::update(dir, |s| { s.sent += out.sent as u64; s.rejected += out.rejected as u64 })`.
     ///
-    /// First, whatever the mode: a companion without its report is removed, a
-    /// report first queued more than seven days ago is deleted with its
-    /// companion, as is a report whose `ch` is `source` (sealed from a source
-    /// build's journal, which only the collector's `403` would otherwise stop),
-    /// all three `dropped`; a report without a readable companion, or with one
-    /// whose `first` is more than a day ahead of `now`, is given a fresh one;
-    /// and a temporary file a crash left over an hour ago, in the queue or the
-    /// folder, is removed.
+    /// First, whatever the mode: a companion without its report is removed and
+    /// a report first queued more than seven days ago is deleted with its
+    /// companion, both `dropped`; a report without a readable companion, or
+    /// with one whose `first` is more than a day ahead of `now`, is given a
+    /// fresh one; and a temporary file a crash left over an hour ago, in the
+    /// queue or under the crate's own names in the folder, is removed.
     ///
     /// Then, with `mode.log`, every due report is printed to stderr as
     /// `visits-app: would send <file name>: <bytes>` and kept (`skipped`), and
     /// the transport is never called; the name is printed without its folder,
-    /// whose path would carry the person's user name. Otherwise a `session-*` report is posted only
-    /// when `mode.uploads`, and a `crash-*` report only when `mode.reason` is
-    /// `None` and `mode.crashes` is not `Never`, since queuing a crash was the
-    /// person's consent, withdrawing it stops what is queued, and `uploads` is
-    /// false under the default `Local`; any other report is `skipped` and kept.
+    /// whose path would carry the person's user name. A source build's report
+    /// is printed too, so a developer sees what it would send.
+    ///
+    /// Otherwise a due report whose `ch` is `source` (sealed from a source
+    /// build's journal, which only the collector's `403` would otherwise stop)
+    /// is deleted with its companion and counted `dropped`, whatever build
+    /// drains it, and never reaches the transport. A `session-*` report is
+    /// posted only when `mode.uploads`, and a `crash-*` report only when
+    /// `mode.reason` is `None` and `mode.crashes` is not `Never`, since queuing
+    /// a crash was the person's consent, withdrawing it stops what is queued,
+    /// and `uploads` is false under the default `Local`; any other report is
+    /// `skipped` and kept.
     ///
     /// A `2xx` deletes the report and its companion; a `429`, a `5xx`, an
     /// error or any status outside `2xx` and `4xx` reschedules it on the
     /// backoff; any other `4xx` deletes both, since the collector will refuse
     /// it again.
-    pub fn drain(&self, t: &dyn Transport, url: &str, user_agent: &str, mode: &Mode, now: u64, state: &mut State) -> Outcome {
-        self.drain_to(t, url, user_agent, mode, now, state, &mut |line| eprintln!("{line}"))
+    pub fn drain(&self, t: &dyn Transport, url: &str, user_agent: &str, mode: &Mode, now: u64) -> Outcome {
+        self.drain_to(t, url, user_agent, mode, now, &mut |line| eprintln!("{line}"))
     }
 
     /// `drain`, handing each line `mode.log` prints to `log`, one call per
     /// line and without its newline, so a test can collect what would reach
     /// stderr.
-    #[allow(clippy::too_many_arguments)]
-    fn drain_to(&self, t: &dyn Transport, url: &str, user_agent: &str, mode: &Mode, now: u64, state: &mut State, log: &mut dyn FnMut(&str)) -> Outcome {
+    fn drain_to(&self, t: &dyn Transport, url: &str, user_agent: &str, mode: &Mode, now: u64, log: &mut dyn FnMut(&str)) -> Outcome {
         let mut out = Outcome::default();
         self.sweep(now, &mut out);
         for path in self.due(now) {
@@ -204,6 +209,11 @@ impl Queue {
                     log(&format!("visits-app: would send {name}: {}", String::from_utf8_lossy(&bytes)));
                 }
                 out.skipped += 1;
+                continue;
+            }
+            if is_source(&path) {
+                remove_both(&path);
+                out.dropped += 1;
                 continue;
             }
             let name = path.file_name().and_then(|n| n.to_str()).unwrap_or_default();
@@ -231,12 +241,10 @@ impl Queue {
             match t.post(url, user_agent, &body) {
                 Ok(200..=299) => {
                     remove_both(&path);
-                    state.sent = state.sent.saturating_add(1);
                     out.sent += 1;
                 }
                 Ok(status) if (400..=499).contains(&status) && status != 429 => {
                     remove_both(&path);
-                    state.rejected = state.rejected.saturating_add(1);
                     out.rejected += 1;
                 }
                 Ok(_) | Err(_) => {
@@ -248,17 +256,24 @@ impl Queue {
         out
     }
 
-    /// Removes companions without their report, reports past their seven days
-    /// and reports from a source build, counting each as dropped; gives a
-    /// report without a readable companion, or with one from more than a day
-    /// ahead (a damaged file or a clock set back), a fresh one, so it too is
-    /// dropped in seven days; and removes stray temporary files.
+    /// Removes companions without their report and reports past their seven
+    /// days, counting each as dropped; gives a report without a readable
+    /// companion, or with one from more than a day ahead (a damaged file or a
+    /// clock set back), a fresh one, so it too is dropped in seven days; and
+    /// removes stray temporary files: any in the queue, and in the folder only
+    /// the crate's own, `state.toml.<pid>.tmp` and `last-session.json.tmp`,
+    /// since the program may keep files of its own there.
     fn sweep(&self, now: u64, out: &mut Outcome) {
-        for folder in [self.folder(), self.dir.clone()] {
-            for tmp in files_in(&folder, "tmp") {
-                if modified_before(&tmp, now.saturating_sub(STRAY)) {
-                    let _ = fs::remove_file(&tmp);
-                }
+        let cutoff = now.saturating_sub(STRAY);
+        let ours = |tmp: &PathBuf| {
+            let name = tmp.file_name().and_then(|n| n.to_str()).unwrap_or_default();
+            name == "last-session.json.tmp"
+                || name.strip_prefix("state.toml.").and_then(|n| n.strip_suffix(".tmp")).is_some_and(|pid| !pid.is_empty() && pid.bytes().all(|c| c.is_ascii_digit()))
+        };
+        let stray = files_in(&self.folder(), "tmp").into_iter().chain(files_in(&self.dir, "tmp").into_iter().filter(ours));
+        for tmp in stray {
+            if modified_before(&tmp, cutoff) {
+                let _ = fs::remove_file(&tmp);
             }
         }
         for retry in self.files("retry") {
@@ -267,11 +282,6 @@ impl Queue {
             }
         }
         for report in self.files("json") {
-            if is_source(&report) {
-                remove_both(&report);
-                out.dropped += 1;
-                continue;
-            }
             match Retry::read(&report) {
                 Some(r) if r.first > now.saturating_add(DAY) => {
                     let _ = Retry::fresh(now).write(&report);
@@ -360,17 +370,21 @@ mod tests {
         Retry::fresh(100).write(&crash).unwrap();
         let mode = Mode { usage: Usage::On, crashes: Crashes::Always, uploads: false, invite: false, log: true, reason: Some("telemetry log") };
         let mut lines = Vec::new();
-        let out = Queue::new(&dir).drain_to(&Never, "u", "a", &mode, 100, &mut State::default(), &mut |line| lines.push(line.to_string()));
-        assert_eq!(out, Outcome { skipped: 2, ..Outcome::default() });
+        let source = queue.join("session-0000000000000009.json");
+        fs::write(&source, br#"{"ch":"source"}"#).unwrap();
+        Retry::fresh(100).write(&source).unwrap();
+        let out = Queue::new(&dir).drain_to(&Never, "u", "a", &mode, 100, &mut |line| lines.push(line.to_string()));
+        assert_eq!(out, Outcome { skipped: 3, ..Outcome::default() });
         // The file's name only: the folder's path would carry the person's user name.
         assert_eq!(
             lines,
             [
                 "visits-app: would send crash-a41c0e9d7b3258f6.json: {\"k\":\"crash\"}".to_string(),
+                "visits-app: would send session-0000000000000009.json: {\"ch\":\"source\"}".to_string(),
                 "visits-app: would send session-3f9a1c27b84d5e60.json: {\"k\":\"session\"}".to_string(),
             ]
         );
-        assert!(crash.exists() && session.exists());
+        assert!(crash.exists() && session.exists() && source.exists(), "a source report is printed and kept too");
         fs::remove_dir_all(&dir).unwrap();
     }
 

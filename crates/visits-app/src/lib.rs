@@ -49,8 +49,9 @@
 //! process left behind. Both change a `State`, the small `state.toml` that
 //! keeps the days the reports count from, and the crate never writes it on its
 //! own. The program and its resident part may share the file, so the program
-//! loads it right before each `seal`, `drain` or `checked` call and saves it
-//! right after; `State::update` does both around one call.
+//! loads it right before each `seal` or `checked` call and saves it right
+//! after; `State::update` does both around one call. A drain's counts are
+//! added the same way once it has returned.
 //!
 //! `Queue` holds the reports waiting to leave, each with a `.retry` companion
 //! that says when it was queued, how often it failed and when it is next due.
@@ -59,7 +60,8 @@
 //! it posts what the mode lets leave, reschedules a failure on a backoff of 15
 //! minutes, an hour, four hours, then daily, deletes what the collector
 //! accepted or refused, and drops what has waited more than seven days. It
-//! counts sent and refused reports in a `State` the program saves after it.
+//! takes no `State`, so the state file is never held across the transport's
+//! calls: the program adds the `Outcome`'s sent and refused counts afterwards.
 //! Sessions sealed under `Local` wait there too, so those sealed in the last
 //! seven days upload once usage turns `On`; a program that wants a clean start
 //! at opt-in deletes them then with `Queue::clear_sessions`.
@@ -117,8 +119,13 @@
 //!     // When the process ends, its journal becomes a report in the queue.
 //!     State::update(dir, |s| seal(dir, &sid, End::Quit, now(), s))??;
 //! }
-//! // Every 15 minutes, the queue posts what the mode lets leave.
-//! State::update(dir, |s| Queue::new(dir).drain(&http, collector, ua, &mode, now(), s))?;
+//! // Every 15 minutes, the queue posts what the mode lets leave, and the state
+//! // takes its counts once the posts are done.
+//! let out = Queue::new(dir).drain(&http, collector, ua, &mode, now());
+//! State::update(dir, |s| {
+//!     s.sent += out.sent as u64;
+//!     s.rejected += out.rejected as u64;
+//! })?;
 //! // Before an update fetch, the day's first goes through the collector.
 //! match Check::next(&env, &State::load(dir), now()) {
 //!     Some(check) => {

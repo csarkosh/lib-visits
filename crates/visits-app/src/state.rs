@@ -2,11 +2,13 @@
 //! counted from and the counts `view` shows. A day is a UTC day number, the days
 //! since the epoch (`unix seconds / 86_400`).
 //!
-//! The crate never saves it on its own: `seal`, `drain` and `checked` change a
-//! `State` in memory and the program saves it. Since the program and its
-//! resident part may share the file, the program loads it right before each of
-//! those calls and saves it right after, which `State::update` does in one
-//! step, so neither undoes what the other saved in between.
+//! The crate never saves it on its own: `seal` and `checked` change a `State`
+//! in memory, `Queue::drain` returns counts the program adds to one, and the
+//! program saves it. Since the program and its resident part may share the
+//! file, the program loads it right before each change and saves it right
+//! after, which `State::update` does in one step, so neither undoes what the
+//! other saved in between. A drain runs outside it, so the file is never held
+//! across the transport's calls.
 
 use std::fs;
 use std::io;
@@ -79,10 +81,10 @@ impl State {
     }
 
     /// Loads `<dir>/state.toml`, hands it to `f`, saves it and returns what `f`
-    /// returned: the way to wrap a `seal`, `drain` or `checked` call, so the
-    /// state is read just before and written just after. The state is saved
-    /// whatever `f` returned, since a call that fails partway may already have
-    /// changed it.
+    /// returned: the way to wrap a `seal` or `checked` call, or the adding of a
+    /// drain's counts, so the state is read just before and written just
+    /// after. The state is saved whatever `f` returned, since a call that fails
+    /// partway may already have changed it.
     ///
     /// ```no_run
     /// # use std::path::Path;
