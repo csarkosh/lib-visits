@@ -60,6 +60,9 @@
 //! minutes, an hour, four hours, then daily, deletes what the collector
 //! accepted or refused, and drops what has waited more than seven days. It
 //! counts sent and refused reports in a `State` the program saves after it.
+//! Sessions sealed under `Local` wait there too, so those sealed in the last
+//! seven days upload once usage turns `On`; a program that wants a clean start
+//! at opt-in deletes them then with `Queue::clear_sessions`.
 //!
 //! `mode` turns the person's settings, the environment and the build's channel
 //! into what may be recorded and sent. Its default is `Local`: recorded on the

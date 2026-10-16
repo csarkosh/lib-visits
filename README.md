@@ -110,15 +110,18 @@ A program on someone's computer can report to the same collector. A report is a 
 - Two routes: `POST /a` takes a report and `GET /a/check` takes the day's update check as a query string; `--app-path` (or `VISITS_APP_PATH`) moves them. The check answers `302` to the redirect, so the update itself never passes through the collector.
 - The `User-Agent` must be `<app>/<version>` and the report's `app` must be an allowed one, or the answer is `403`. A report from a source build (`ch` of `source`) is `403` and is not written.
 - A report may carry enumerated values, versions, counts and hashes. It may not carry free text, an identifier or any key the schema does not know: that report is refused whole with `400`, not trimmed.
+- Uploads are off until the program's own setting turns them on; `DO_NOT_TRACK`, `<APP>_TELEMETRY=off`, `CI` and a source build keep everything local, and `<APP>_TELEMETRY=log` prints what would be sent instead. Sessions recorded under `Local` in the last seven days upload once the setting turns on; a program that wants a clean start deletes `queue/session-*` at that moment (`Queue::clear_sessions`).
 
 The client half is a crate, `visits-app`, with the report types, the journal, the queue and the consent rules; the program supplies the network and the window.
 
     visits-app = { git = "https://github.com/csarkosh/lib-visits", tag = "v0.3.0" }
 
-The program lists the events it records and what each may carry in a file it ships:
+The program lists the events it records, what each may carry and the surfaces it counts time in, in a file it ships:
 
     [events.pane_open]
     kind = ["terminal", "viewer", "browser"]
     [events.window_open]
+    [focus]
+    surfaces = ["terminal", "viewer", "browser"]
 
 The program's loop (seal, queue, upload, check) is one `no_run` example in the crate docs, `crates/visits-app/src/lib.rs`; the wire format is section 6 of `spec/SPEC.md`.
