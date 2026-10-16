@@ -36,7 +36,7 @@ pub struct Settings {
 /// machine at all; `invite` whether to show the invitation to turn usage on;
 /// `log` whether to print each payload to stderr instead of sending it;
 /// `reason` names the rule that kept `uploads` off, when one did.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Mode {
     pub usage: Usage,
     pub crashes: Crashes,

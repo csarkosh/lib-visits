@@ -6,7 +6,7 @@
 //! `{"first": <secs>, "attempts": <n>, "next": <secs>}`: when the report was
 //! queued, how many posts have failed, and when it is next due. `seal` and
 //! `Queue::enqueue_crash` write both, the companion first, each through a
-//! temporary file and a rename, so the queue never reads a file's time and
+//! temporary file and a rename, so the queue never reads a report's file time and
 //! never sees half a report. A report found without a companion (or with one
 //! that does not parse) is due at once and is given a fresh one by the next
 //! `drain`, so it ages like any other.
@@ -15,22 +15,29 @@
 //! a day later, then daily. Whatever its attempts, a report first queued more
 //! than seven days ago is deleted, so the queue never grows without bound,
 //! even under `Local`, where sessions are never sent.
+//!
+//! The seven days hold under `Local` too: a session sealed while usage was
+//! `Local` waits in the queue, and if the person turns usage `On` within seven
+//! days of its sealing, the next `drain` sends it. A program that wants usage
+//! turned on to start clean calls `Queue::clear_sessions` at that moment.
 
 use crate::mode::{Crashes, Mode};
 use crate::report::Crash;
-use crate::seal::write_whole;
-use crate::state::State;
-use serde_json::{json, Value};
+use crate::retry::{write_whole, Retry};
+use crate::state::{State, DAY};
+use serde_json::Value;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::time::UNIX_EPOCH;
 use visits_core::app::is_hex;
-
-/// Seconds in a day.
-const DAY: u64 = 86_400;
 
 /// How long a report may wait in the queue, counted from when it was queued.
 const KEEP: u64 = 7 * DAY;
+
+/// How old a temporary file must be before a drain removes it as left by a
+/// crash; a younger one may be another process's write in progress.
+const STRAY: u64 = 3_600;
 
 /// The wait after the first, second, third and fourth failed post; every later
 /// failure waits as long as the last.
@@ -53,48 +60,16 @@ pub struct Queue {
 /// `failed` are rescheduled (`429`, `5xx`, an error, or any other status that
 /// is neither success nor refusal); `rejected` the collector refused (another
 /// `4xx`), deleted; `dropped` were deleted unsent, a report older than seven
-/// days or a companion without its report; `skipped` were due but kept, since
-/// the mode does not let them leave or only logs them.
-#[derive(Default, Debug, PartialEq)]
+/// days, a companion without its report, or a report from a source build;
+/// `skipped` were due but kept, since the mode does not let them leave or only
+/// logs them.
+#[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]
 pub struct Outcome {
     pub sent: usize,
     pub failed: usize,
     pub rejected: usize,
     pub dropped: usize,
     pub skipped: usize,
-}
-
-/// A report's companion.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub(crate) struct Retry {
-    pub(crate) first: u64,
-    pub(crate) attempts: u32,
-    pub(crate) next: u64,
-}
-
-impl Retry {
-    /// The companion of a report queued at `now`: due at once, never tried.
-    fn fresh(now: u64) -> Retry {
-        Retry { first: now, attempts: 0, next: now }
-    }
-
-    /// Reads the companion of the report at `report`; `None` when it is
-    /// missing, cannot be read or does not hold the three integers.
-    pub(crate) fn read(report: &Path) -> Option<Retry> {
-        let bytes = fs::read(report.with_extension("retry")).ok()?;
-        let v: Value = serde_json::from_slice(&bytes).ok()?;
-        Some(Retry {
-            first: v.get("first")?.as_u64()?,
-            attempts: u32::try_from(v.get("attempts")?.as_u64()?).ok()?,
-            next: v.get("next")?.as_u64()?,
-        })
-    }
-
-    /// Writes the companion of the report at `report` whole.
-    fn write(&self, report: &Path) -> io::Result<()> {
-        let v = json!({ "first": self.first, "attempts": self.attempts, "next": self.next });
-        write_whole(&report.with_extension("retry"), v.to_string().as_bytes())
-    }
 }
 
 /// The wait after the `attempts`-th failed post, `attempts` counting from 1.
@@ -150,6 +125,33 @@ impl Queue {
         Ok(path)
     }
 
+    /// Deletes every queued session report and its companion, and returns how
+    /// many reports it deleted; crash reports stay. A program calls it when the
+    /// person turns usage `On` and wants only what is recorded from then on to
+    /// leave, rather than the sessions sealed under `Local` in the last seven
+    /// days. A companion without its report is removed too and not counted.
+    pub fn clear_sessions(&self) -> io::Result<usize> {
+        let mut cleared = 0;
+        for report in self.files("json") {
+            if is_session(&report) {
+                match fs::remove_file(&report) {
+                    Ok(()) => cleared += 1,
+                    Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+                    Err(e) => return Err(e),
+                }
+            }
+        }
+        for retry in self.files("retry") {
+            if is_session(&retry) {
+                match fs::remove_file(&retry) {
+                    Err(e) if e.kind() != io::ErrorKind::NotFound => return Err(e),
+                    _ => {}
+                }
+            }
+        }
+        Ok(cleared)
+    }
+
     /// The reports due at `now`, sorted by name: those whose companion's `next`
     /// has come, and those with no readable companion. It deletes nothing; a
     /// report past its seven days is listed until a `drain` drops it.
@@ -164,12 +166,17 @@ impl Queue {
     ///
     /// First, whatever the mode: a companion without its report is removed, a
     /// report first queued more than seven days ago is deleted with its
-    /// companion (both `dropped`), and a report without a readable companion is
-    /// given a fresh one.
+    /// companion, as is a report whose `ch` is `source` (sealed from a source
+    /// build's journal, which only the collector's `403` would otherwise stop),
+    /// all three `dropped`; a report without a readable companion, or with one
+    /// whose `first` is more than a day ahead of `now`, is given a fresh one;
+    /// and a temporary file a crash left over an hour ago, in the queue or the
+    /// folder, is removed.
     ///
     /// Then, with `mode.log`, every due report is printed to stderr as
-    /// `visits-app: would send <path>: <bytes>` and kept (`skipped`), and the
-    /// transport is never called. Otherwise a `session-*` report is posted only
+    /// `visits-app: would send <file name>: <bytes>` and kept (`skipped`), and
+    /// the transport is never called; the name is printed without its folder,
+    /// whose path would carry the person's user name. Otherwise a `session-*` report is posted only
     /// when `mode.uploads`, and a `crash-*` report only when `mode.reason` is
     /// `None` and `mode.crashes` is not `Never`, since queuing a crash was the
     /// person's consent, withdrawing it stops what is queued, and `uploads` is
@@ -193,7 +200,8 @@ impl Queue {
         for path in self.due(now) {
             if mode.log {
                 if let Ok(bytes) = fs::read(&path) {
-                    log(&format!("visits-app: would send {}: {}", path.display(), String::from_utf8_lossy(&bytes)));
+                    let name = path.file_name().unwrap_or_default().to_string_lossy();
+                    log(&format!("visits-app: would send {name}: {}", String::from_utf8_lossy(&bytes)));
                 }
                 out.skipped += 1;
                 continue;
@@ -240,17 +248,34 @@ impl Queue {
         out
     }
 
-    /// Removes companions without their report and reports past their seven
-    /// days, counting both as dropped, and gives a report without a readable
-    /// companion a fresh one, so it too is dropped in seven days.
+    /// Removes companions without their report, reports past their seven days
+    /// and reports from a source build, counting each as dropped; gives a
+    /// report without a readable companion, or with one from more than a day
+    /// ahead (a damaged file or a clock set back), a fresh one, so it too is
+    /// dropped in seven days; and removes stray temporary files.
     fn sweep(&self, now: u64, out: &mut Outcome) {
+        for folder in [self.folder(), self.dir.clone()] {
+            for tmp in files_in(&folder, "tmp") {
+                if modified_before(&tmp, now.saturating_sub(STRAY)) {
+                    let _ = fs::remove_file(&tmp);
+                }
+            }
+        }
         for retry in self.files("retry") {
             if !retry.with_extension("json").exists() && fs::remove_file(&retry).is_ok() {
                 out.dropped += 1;
             }
         }
         for report in self.files("json") {
+            if is_source(&report) {
+                remove_both(&report);
+                out.dropped += 1;
+                continue;
+            }
             match Retry::read(&report) {
+                Some(r) if r.first > now.saturating_add(DAY) => {
+                    let _ = Retry::fresh(now).write(&report);
+                }
                 Some(r) if now.saturating_sub(r.first) > KEEP => {
                     remove_both(&report);
                     out.dropped += 1;
@@ -262,6 +287,26 @@ impl Queue {
             }
         }
     }
+}
+
+/// Whether a queue file is a session's report or companion, by its name.
+fn is_session(path: &Path) -> bool {
+    path.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.starts_with("session-"))
+}
+
+/// Whether the report at `path` says it comes from a source build: its
+/// top-level `ch` is `source`. A file that cannot be read or parsed is not.
+fn is_source(path: &Path) -> bool {
+    let Ok(bytes) = fs::read(path) else { return false };
+    serde_json::from_slice::<Value>(&bytes).is_ok_and(|v| v.get("ch").and_then(Value::as_str) == Some("source"))
+}
+
+/// Whether the file at `path` was last modified before `cutoff` (unix
+/// seconds); `false` when its time cannot be read, so a file of unknown age is kept.
+pub(crate) fn modified_before(path: &Path, cutoff: u64) -> bool {
+    let modified = fs::metadata(path).and_then(|m| m.modified()).ok();
+    let secs = modified.and_then(|t| t.duration_since(UNIX_EPOCH).ok()).map(|d| d.as_secs());
+    secs.is_some_and(|secs| secs < cutoff)
 }
 
 /// The files in `folder` with this extension, sorted by name, so `x.json.tmp`,
@@ -317,11 +362,12 @@ mod tests {
         let mut lines = Vec::new();
         let out = Queue::new(&dir).drain_to(&Never, "u", "a", &mode, 100, &mut State::default(), &mut |line| lines.push(line.to_string()));
         assert_eq!(out, Outcome { skipped: 2, ..Outcome::default() });
+        // The file's name only: the folder's path would carry the person's user name.
         assert_eq!(
             lines,
             [
-                format!("visits-app: would send {}: {{\"k\":\"crash\"}}", crash.display()),
-                format!("visits-app: would send {}: {{\"k\":\"session\"}}", session.display()),
+                "visits-app: would send crash-a41c0e9d7b3258f6.json: {\"k\":\"crash\"}".to_string(),
+                "visits-app: would send session-3f9a1c27b84d5e60.json: {\"k\":\"session\"}".to_string(),
             ]
         );
         assert!(crash.exists() && session.exists());

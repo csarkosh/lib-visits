@@ -17,6 +17,12 @@ fn on() -> Settings {
 }
 
 #[test]
+fn a_mode_is_eq() {
+    fn eq<T: Eq>(_: &T) {}
+    eq(&release(&Settings::default(), &[]));
+}
+
+#[test]
 fn an_empty_settings_records_locally_and_invites() {
     let m = release(&Settings::default(), &[]);
     assert_eq!(

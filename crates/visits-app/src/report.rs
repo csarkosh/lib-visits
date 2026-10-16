@@ -6,16 +6,16 @@
 //! The one refusal they let through is the source channel (`Invalid::Channel`,
 //! which the collector reads only after every other check has passed): a source
 //! build records, seals and queues like any other, so a developer can read their
-//! own journal and queue. The guard that keeps it from uploading is `mode()`,
-//! which never allows uploads for a source build, and the collector, which
-//! answers it `403`.
+//! own journal, the session sealed last and the queue until the next drain. The
+//! guards that keep it from uploading are `mode()`, which never allows uploads
+//! for a source build, `Queue::drain`, which deletes a queued report whose `ch`
+//! is `source` whatever build drains it, and the collector, which answers it
+//! `403`.
 
 use serde_json::{Map, Value};
 use std::collections::BTreeMap;
+use visits_core::app::MAX_EVENTS;
 use visits_core::{validate_check, validate_report, Invalid};
-
-/// The most events a session report carries (section 6.4).
-const MAX_EVENTS: usize = 200;
 
 /// The operating system a program runs on.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -190,6 +190,8 @@ impl DValue {
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Event {
     pub n: String,
+    /// Seconds since the session started, set by `Journal::event` from the
+    /// time it is given: the value the caller puts here is ignored.
     pub t: u64,
     pub d: BTreeMap<String, DValue>,
 }
@@ -365,7 +367,8 @@ pub struct Crash {
     pub line: u32,
     pub frames: Vec<(u32, u64)>,
     pub images: Vec<(String, String, u64)>,
-    pub sig: Option<i32>,
+    /// The signal number, for a `Signal` crash: at most 255.
+    pub sig: Option<u32>,
     pub up: Uptime,
     pub mem: Option<Memory>,
 }

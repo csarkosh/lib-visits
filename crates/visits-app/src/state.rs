@@ -16,6 +16,14 @@ use toml::{Table, Value};
 /// The file's name inside the crate's folder.
 const FILE: &str = "state.toml";
 
+/// Seconds in a UTC day.
+pub(crate) const DAY: u64 = 86_400;
+
+/// The UTC day number of `now`, the days since the epoch.
+pub(crate) fn day(now: u64) -> i64 {
+    (now / DAY) as i64
+}
+
 /// What the crate remembers between runs.
 #[derive(Default, Clone, Debug, PartialEq)]
 pub struct State {

@@ -174,6 +174,27 @@ fn the_events_the_journal_dropped_are_added_to_ev_dropped() {
 }
 
 #[test]
+fn a_session_past_the_wire_maxima_is_kept_within_them() {
+    use visits_core::app::MAX_SECS;
+    let dir = scratch("long");
+    let text = [
+        start_line(NOON),
+        ev_line("launch", 0, json!({})),
+        ev_line("late", MAX_SECS + 1, json!({})),
+        mark_line(MAX_SECS + 60, json!({ "editor": MAX_SECS + 5 }), 0),
+    ]
+    .concat();
+    write_journal(&dir, SID, &text);
+    let path = seal(&dir, SID, End::Quit, NOON + 40 * DAY, &mut State::default()).unwrap().expect("queued, not refused");
+    let report = read_json(&path);
+    assert_eq!(report["len"], MAX_SECS);
+    assert_eq!(report["focus"], json!({ "editor": MAX_SECS }));
+    assert_eq!(report["ev"], json!([{ "n": "launch", "t": 0 }]), "an event past the cap is dropped");
+    assert_eq!(report["ev_dropped"], 1);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
 fn a_journal_without_a_mark_seals_with_an_empty_focus() {
     let dir = scratch("nomark");
     write_journal(&dir, SID, &[start_line(NOON), ev_line("launch", 0, json!({})), ev_line("window_open", 30, json!({}))].concat());

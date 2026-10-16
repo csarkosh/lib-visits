@@ -10,8 +10,9 @@
 //! so the program can never write what the collector would refuse for its
 //! shape, and the bytes returned are the bytes the program sends and shows the
 //! person. A source build's reports pass this check (the collector's `403` for
-//! `ch: source` and `mode()` are its guards), so it records and seals like any
-//! other and never uploads.
+//! `ch: source`, `mode()` and `Queue::drain`, which deletes a queued source
+//! report, are its guards), so it records and seals like any other and never
+//! uploads.
 //!
 //! This departs from the design's 4.1, which has constructors that take the
 //! enums and refuse the rest: the fields are public and the check happens once,
@@ -133,6 +134,7 @@ pub mod journal;
 pub mod mode;
 pub mod queue;
 pub mod report;
+mod retry;
 pub mod seal;
 pub mod state;
 pub mod view;

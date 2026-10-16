@@ -130,6 +130,15 @@ fn a_crash_with_a_signal_and_no_options_writes_sig_and_omits_the_rest() {
 }
 
 #[test]
+fn a_crash_signal_is_unsigned_and_at_most_255() {
+    let mut c = crash();
+    c.sig = Some(255u32);
+    assert!(c.to_bytes().is_ok());
+    c.sig = Some(256);
+    assert_eq!(c.to_bytes(), Err(Invalid::Pattern("sig".into())));
+}
+
+#[test]
 fn every_enum_writes_its_wire_spelling() {
     let mut s = session();
     for (os, text) in [(Os::Macos, "macos"), (Os::Linux, "linux"), (Os::Windows, "windows")] {

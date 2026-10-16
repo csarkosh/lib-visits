@@ -3,7 +3,9 @@
 //! asking, so what the person sees is what is there.
 
 use crate::mode::Mode;
-use crate::queue::{files_in, Retry};
+use crate::queue::files_in;
+use crate::retry::Retry;
+use crate::seal::LAST;
 use crate::state::State;
 use std::fs;
 use std::io;
@@ -49,7 +51,7 @@ pub fn view(dir: &Path, mode: Mode, now: u64) -> View {
         mode,
         state: State::load(dir),
         queued,
-        last_session: Some(dir.join("last-session.json")).filter(|p| p.is_file()),
+        last_session: Some(dir.join(LAST)).filter(|p| p.is_file()),
         journals: files_in(&dir.join("journal"), "jsonl"),
     }
 }

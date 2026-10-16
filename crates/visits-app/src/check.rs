@@ -8,15 +8,8 @@
 //! and the day's other fetches straight to its update source.
 
 use crate::report::{Check, Envelope};
-use crate::state::State;
-
-/// Seconds in a UTC day.
-const DAY: u64 = 86_400;
-
-/// The UTC day number of `now`, the days since the epoch.
-fn day(now: u64) -> i64 {
-    (now / DAY) as i64
-}
+use crate::state::{day, State};
+use visits_core::app::MAX_DAYS;
 
 impl Check {
     /// The check to send with the update fetch the program is about to make,
@@ -24,7 +17,8 @@ impl Check {
     ///
     /// `Some` once a UTC day: `None` when `state.last_check_day` is the day of
     /// `now`. `rd` is the days since that last check, `-1` without one; a clock
-    /// set back before it gives `0`, never a negative count. A source build
+    /// set back before it gives `0`, never a negative count, and a gap past the
+    /// wire's cap of 100,000 days is that cap. A source build
     /// (`env.ch` is `source`) is always `None`, whatever the state, since it
     /// never touches the collector.
     pub fn next(env: &Envelope, state: &State, now: u64) -> Option<Check> {
@@ -34,7 +28,7 @@ impl Check {
         let today = day(now);
         let rd = match state.last_check_day {
             Some(last) if last == today => return None,
-            Some(last) => (today - last).max(0),
+            Some(last) => (today - last).clamp(0, MAX_DAYS as i64),
             None => -1,
         };
         Some(Check { env: env.clone(), rd })

@@ -3,6 +3,7 @@ use std::cell::RefCell;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::{Duration, UNIX_EPOCH};
 use visits_app::{mode, Arch, Channel, Crash, CrashKind, Crashes, Envelope, Memory, Mode, Os, Outcome, Queue, Settings, State, Transport, Uptime, Usage};
 
 const DAY: u64 = 86_400;
@@ -449,6 +450,98 @@ fn drain_never_writes_the_state_file() {
     drain(&dir, &[Ok(400)], &on(), NOW, &mut State::default());
     assert!(!dir.join("state.toml").exists());
     std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// Creates `path` with a modification time of `at` (unix seconds).
+fn touch(path: &Path, at: u64) {
+    let file = std::fs::File::create(path).unwrap();
+    file.set_modified(UNIX_EPOCH + Duration::from_secs(at)).unwrap();
+}
+
+#[test]
+fn a_companion_from_more_than_a_day_ahead_is_damaged_and_made_afresh() {
+    let dir = scratch("future");
+    let ahead = put(&dir, SESSION, Some(json!({ "first": NOW + DAY + 1, "attempts": 0, "next": NOW + DAY + 1 })));
+    let within = put(&dir, CRASH, Some(json!({ "first": NOW + DAY, "attempts": 1, "next": NOW + DAY })));
+    let local = mode_for(Settings::default(), &[]);
+    let (outcome, fake) = drain(&dir, &[Ok(204)], &local, NOW, &mut State::default());
+    assert_eq!(outcome, Outcome { skipped: 1, ..Outcome::default() }, "the session is due at once, the crash not yet");
+    assert_eq!(fake.calls(), 0);
+    assert_eq!(retry_of(&ahead), fresh(NOW).unwrap());
+    assert_eq!(retry_of(&within), json!({ "first": NOW + DAY, "attempts": 1, "next": NOW + DAY }));
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn stray_temp_files_are_removed_from_the_queue_and_the_folder() {
+    let dir = scratch("tmp");
+    put(&dir, SESSION, fresh(NOW));
+    let queue = dir.join("queue");
+    let stray = [queue.join(format!("{SESSION}.json.tmp")), queue.join(format!("{CRASH}.retry.tmp")), dir.join("state.toml.4242.tmp")];
+    for path in &stray {
+        touch(path, NOW - 2 * 3_600);
+    }
+    // A write in progress, from the last hour, is left to finish.
+    let fresh_tmp = [queue.join("crash-0000000000000001.json.tmp"), dir.join("state.toml.4343.tmp")];
+    for path in &fresh_tmp {
+        touch(path, NOW - 60);
+    }
+    let local = mode_for(Settings::default(), &[]);
+    let (outcome, _) = drain(&dir, &[Ok(204)], &local, NOW, &mut State::default());
+    assert_eq!(outcome, Outcome { skipped: 1, ..Outcome::default() }, "a temp file is not a report");
+    for path in &stray {
+        assert!(!path.exists(), "{}", path.display());
+    }
+    for path in &fresh_tmp {
+        assert!(path.exists(), "{}", path.display());
+    }
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn a_queued_source_report_is_dropped_and_never_posted() {
+    let dir = scratch("source-report");
+    let queue = dir.join("queue");
+    std::fs::create_dir_all(&queue).unwrap();
+    let source = queue.join(format!("{SESSION}.json"));
+    let source_bytes = br#"{"v":2,"app":"arkos","ch":"source","k":"session"}"#;
+    std::fs::write(&source, source_bytes).unwrap();
+    std::fs::write(source.with_extension("retry"), fresh(NOW).unwrap().to_string()).unwrap();
+    // A `d` key named `ch` is the program's own and says nothing of the build.
+    let release = queue.join(format!("{CRASH}.json"));
+    std::fs::write(&release, br#"{"v":2,"app":"arkos","ch":"release","k":"crash","ev":[{"d":{"ch":"source"}}]}"#).unwrap();
+    std::fs::write(release.with_extension("retry"), fresh(NOW).unwrap().to_string()).unwrap();
+    for m in [on(), mode_for(Settings { usage: Some(Usage::On), crashes: Some(Crashes::Always) }, &[(VAR, "log")])] {
+        let mut state = State::default();
+        let fake = Fake::answering(&[Err("offline".into())]);
+        let outcome = Queue::new(&dir).drain(&fake, URL, UA, &m, NOW, &mut state);
+        assert_eq!(outcome.dropped, if m.log { 0 } else { 1 }, "dropped once, on the first drain");
+        assert!(fake.calls.borrow().iter().all(|(_, _, body)| body.as_slice() != source_bytes.as_slice()));
+        assert!(!source.exists() && !source.with_extension("retry").exists());
+        assert!(release.exists());
+    }
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn clear_sessions_deletes_the_queued_sessions_and_keeps_the_crashes() {
+    let dir = scratch("clear");
+    assert_eq!(Queue::new(&dir).clear_sessions().unwrap(), 0, "no queue folder is nothing to clear");
+    put(&dir, SESSION, fresh(NOW));
+    put(&dir, "session-0000000000000002", None);
+    let lone = put(&dir, "session-0000000000000003", fresh(NOW));
+    std::fs::remove_file(&lone).unwrap();
+    put(&dir, CRASH, fresh(NOW));
+    assert_eq!(Queue::new(&dir).clear_sessions().unwrap(), 2);
+    assert_eq!(listing(&dir), [format!("{CRASH}.json"), format!("{CRASH}.retry")]);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn an_outcome_is_copied() {
+    let a = Outcome { sent: 1, ..Outcome::default() };
+    let b = a;
+    assert_eq!(a, b);
 }
 
 #[test]

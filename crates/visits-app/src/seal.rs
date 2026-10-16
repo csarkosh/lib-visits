@@ -2,7 +2,7 @@
 //! report in the queue, `<dir>/queue/session-<sid>.json`, beside its retry
 //! companion `<dir>/queue/session-<sid>.retry`, which is
 //! `{"first": <now>, "attempts": 0, "next": <now>}` so the queue never reads a
-//! file's time. Both are written through a temporary file and a rename, the
+//! report's file time. Both are written through a temporary file and a rename, the
 //! companion first, so the queue never sees half a report.
 //!
 //! The journal is read as the `journal` module writes it: the complete lines
@@ -23,21 +23,19 @@
 //! collector may see the same `sid` twice. A crash between the two renames
 //! leaves a `.retry` with no `.json`, which the queue's drain removes.
 
+use crate::queue::modified_before;
 use crate::report::{End, Envelope, Event, Session};
-use crate::state::State;
-use serde_json::{json, Value};
+use crate::retry::{write_whole, Retry};
+use crate::state::{day, State};
+use serde_json::Value;
 use std::collections::BTreeMap;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::time::UNIX_EPOCH;
-use visits_core::app::is_hex;
+use visits_core::app::{is_hex, MAX_COUNT, MAX_DAYS, MAX_SECS};
 
-/// Seconds in a UTC day.
-const DAY: u64 = 86_400;
-
-/// The copy of the session report sealed last, beside the queue.
-const LAST: &str = "last-session.json";
+/// The copy of the session report sealed last, beside the queue; `view` shows it.
+pub(crate) const LAST: &str = "last-session.json";
 
 /// What a journal says about its session.
 struct Recorded {
@@ -96,13 +94,13 @@ fn mark(v: &Value) -> Option<(u64, BTreeMap<String, u64>, u64, u64)> {
     Some((t, focus, rejected, dropped))
 }
 
-/// Writes a file whole through a temporary file and a rename. The queue
-/// writes its companions with it too.
-pub(crate) fn write_whole(path: &Path, bytes: &[u8]) -> io::Result<()> {
-    let mut tmp = path.as_os_str().to_owned();
-    tmp.push(".tmp");
-    fs::write(&tmp, bytes)?;
-    fs::rename(&tmp, path)
+/// Removes a file, counting one already gone as removed: another process
+/// sealing the same journal may have got there first.
+fn remove_if_present(path: &Path) -> io::Result<()> {
+    match fs::remove_file(path) {
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
+        other => other,
+    }
 }
 
 /// Seals `<dir>/journal/<sid>.jsonl` into `<dir>/queue/session-<sid>.json` and
@@ -115,14 +113,19 @@ pub(crate) fn write_whole(path: &Path, bytes: &[u8]) -> io::Result<()> {
 /// first seal sets to the day this session started; `rd` is the days since
 /// `state.last_report_day`, `-1` without one, and that day becomes today once
 /// the report is queued. The state is changed in memory only: the caller saves
-/// it.
+/// it, through `State::update`.
+///
+/// A session is kept within the wire's maxima rather than refused whole: `len`
+/// and each focus total are capped at 31 days, an event later than that is
+/// dropped and counted in `ev_dropped`, the counts are capped at 1,000,000 and
+/// `rd` at 100,000 days.
 ///
 /// `Ok(None)` when there is nothing to queue: no journal for `sid`, a journal
 /// without a start line (deleted), or a session the wire would refuse, such as
 /// one whose journal names a channel outside the name pattern (deleted and
 /// counted in `state.rejected`). A source build's session is queued like any
-/// other; `mode()` keeps it from uploading. A `sid` that is not 16 to 32
-/// lowercase hex characters is `InvalidInput`.
+/// other; `mode()` keeps it from uploading and the next `drain` deletes it. A
+/// `sid` that is not 16 to 32 lowercase hex characters is `InvalidInput`.
 pub fn seal(dir: &Path, sid: &str, end: End, now: u64, state: &mut State) -> io::Result<Option<PathBuf>> {
     if !is_hex(sid, 16, 32) {
         return Err(io::Error::new(io::ErrorKind::InvalidInput, "a session id is 16 to 32 lowercase hex characters"));
@@ -134,14 +137,14 @@ pub fn seal(dir: &Path, sid: &str, end: End, now: u64, state: &mut State) -> io:
         Err(e) => return Err(e),
     };
     let Some(j) = read(&bytes) else {
-        fs::remove_file(&journal)?;
+        remove_if_present(&journal)?;
         return Ok(None);
     };
 
-    let first = *state.first_launch_day.get_or_insert((j.start / DAY) as i64);
-    let today = (now / DAY) as i64;
+    let first = *state.first_launch_day.get_or_insert(day(j.start));
+    let today = day(now);
     // A clock set back must not give a negative count of days.
-    let rd = state.last_report_day.map_or(-1, |last| (today - last).max(0));
+    let rd = state.last_report_day.map_or(-1, |last| (today - last).clamp(0, MAX_DAYS as i64));
     let len = match end {
         End::Quit => now.saturating_sub(j.start),
         End::Lost | End::Unknown => j.last_t,
@@ -149,34 +152,38 @@ pub fn seal(dir: &Path, sid: &str, end: End, now: u64, state: &mut State) -> io:
     let mut session = Session {
         env: j.env,
         sid: sid.to_string(),
-        len,
+        len: len.min(MAX_SECS),
         end,
         iw: first - first.rem_euclid(7),
         rd,
-        focus: j.focus,
+        focus: j.focus.into_iter().map(|(k, secs)| (k, secs.min(MAX_SECS))).collect(),
         ev: Vec::new(),
         ev_dropped: j.dropped,
-        ev_rejected: j.rejected,
+        ev_rejected: j.rejected.min(MAX_COUNT),
     };
     for e in j.ev {
-        session.push(e);
+        if e.t > MAX_SECS {
+            session.ev_dropped += 1;
+        } else {
+            session.push(e);
+        }
     }
+    session.ev_dropped = session.ev_dropped.min(MAX_COUNT);
     let Ok(report) = session.to_bytes() else {
         state.rejected += 1;
-        fs::remove_file(&journal)?;
+        remove_if_present(&journal)?;
         return Ok(None);
     };
 
     let queue = dir.join("queue");
     fs::create_dir_all(&queue)?;
     let path = queue.join(format!("session-{sid}.json"));
-    let retry = json!({ "first": now, "attempts": 0, "next": now });
-    write_whole(&path.with_extension("retry"), retry.to_string().as_bytes())?;
+    Retry::fresh(now).write(&path)?;
     write_whole(&path, &report)?;
     // A copy for `view`, which outlives the queued report once it is sent.
     write_whole(&dir.join(LAST), &report)?;
     state.last_report_day = Some(today);
-    fs::remove_file(&journal)?;
+    remove_if_present(&journal)?;
     Ok(Some(path))
 }
 
@@ -208,7 +215,7 @@ pub fn seal_stale(dir: &Path, now: u64, older_than_secs: u64, state: &mut State)
         match read(&bytes) {
             Some(j) if j.start.saturating_add(j.last_t) < cutoff => stale.push((j.start, sid.to_string())),
             Some(_) => {}
-            None if modified_before(&entry, cutoff) => stale.push((0, sid.to_string())),
+            None if modified_before(&entry.path(), cutoff) => stale.push((0, sid.to_string())),
             None => {}
         }
     }
@@ -222,10 +229,21 @@ pub fn seal_stale(dir: &Path, now: u64, older_than_secs: u64, state: &mut State)
     Ok(sealed)
 }
 
-/// Whether a file was last modified before `cutoff` (unix seconds); `false`
-/// when its time cannot be read, so a file of unknown age is kept.
-fn modified_before(entry: &fs::DirEntry, cutoff: u64) -> bool {
-    let modified = entry.metadata().and_then(|m| m.modified()).ok();
-    let secs = modified.and_then(|t| t.duration_since(UNIX_EPOCH).ok()).map(|d| d.as_secs());
-    secs.is_some_and(|secs| secs < cutoff)
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_journal_already_removed_counts_as_removed() {
+        let dir = std::env::temp_dir().join(format!("visits-app-seal-unit-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("gone.jsonl");
+        fs::write(&path, b"x").unwrap();
+        remove_if_present(&path).unwrap();
+        assert!(!path.exists());
+        remove_if_present(&path).unwrap();
+        fs::remove_dir_all(&dir).unwrap();
+    }
 }
