@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use visits_app::{seal, seal_stale, Allowlist, Arch, Channel, DValue, End, Envelope, Event, Journal, Os, Session, State};
 
 const SID: &str = "3f9a1c27b84d5e60";
@@ -256,7 +257,8 @@ fn iw_is_a_week_and_is_set_once() {
 #[test]
 fn a_session_the_wire_refuses_is_dropped_and_counted() {
     let dir = scratch("refused");
-    let text = start_line(NOON).replace("\"tap\"", "\"source\"") + &ev_line("launch", 0, json!({}));
+    // A capital is outside the channel's name pattern, so the wire refuses it.
+    let text = start_line(NOON).replace("\"tap\"", "\"Tap\"") + &ev_line("launch", 0, json!({}));
     let journal = write_journal(&dir, SID, &text);
     let mut state = State { rejected: 4, ..State::default() };
 
@@ -267,6 +269,22 @@ fn a_session_the_wire_refuses_is_dropped_and_counted() {
     assert!(!journal.exists());
     let queued = std::fs::read_dir(dir.join("queue")).map(|r| r.count()).unwrap_or(0);
     assert_eq!(queued, 0, "nothing is queued");
+
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn a_source_build_seals_like_any_other() {
+    let dir = scratch("source");
+    let text = start_line(NOON).replace("\"tap\"", "\"source\"") + &ev_line("launch", 0, json!({}));
+    write_journal(&dir, SID, &text);
+    let mut state = State { rejected: 4, ..State::default() };
+
+    let path = seal(&dir, SID, End::Quit, NOON + 60, &mut state).unwrap().expect("a source build's report is queued");
+
+    assert_eq!(read_json(&path)["ch"], "source");
+    assert_eq!(state.rejected, 4, "a source build is never counted as rejected");
+    assert_eq!(state.last_report_day, Some(D0 as i64));
 
     std::fs::remove_dir_all(&dir).unwrap();
 }
@@ -316,6 +334,63 @@ fn seal_stale_seals_the_old_journal_and_leaves_the_fresh_one() {
     assert_eq!(report["len"], 120);
     assert!(!old_journal.exists());
     assert!(fresh_journal.exists(), "a journal seen within the day is left alone");
+
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn seal_stale_seals_oldest_first_so_the_first_launch_is_the_earliest() {
+    let dir = scratch("stale-order");
+    let now = NOON + 30 * DAY;
+    // The sid that sorts first by name started later, so name order would be wrong.
+    write_journal(&dir, "aaaaaaaaaaaaaaaa", &four_events_two_marks(NOON + 5 * DAY));
+    write_journal(&dir, "ffffffffffffffff", &four_events_two_marks(NOON));
+    let mut state = State::default();
+
+    let sealed = seal_stale(&dir, now, DAY, &mut state).unwrap();
+
+    let names: Vec<_> = sealed.iter().map(|p| p.file_name().unwrap().to_string_lossy().into_owned()).collect();
+    assert_eq!(names, ["session-ffffffffffffffff.json", "session-aaaaaaaaaaaaaaaa.json"]);
+    assert_eq!(state.first_launch_day, Some(D0 as i64));
+    let iw = (D0 - D0 % 7) as i64;
+    assert_eq!(read_json(&sealed[1])["iw"], iw, "the later session carries the earlier install week");
+
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn seal_stale_discards_a_start_less_journal_only_once_its_file_is_old() {
+    let dir = scratch("stale-startless");
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+    let fresh = write_journal(&dir, "3333333333333333", "");
+    let old = write_journal(&dir, "4444444444444444", "{\"start\": 1");
+    let two_days_ago = SystemTime::now() - Duration::from_secs(2 * DAY);
+    std::fs::File::options().write(true).open(&old).unwrap().set_modified(two_days_ago).unwrap();
+    let mut state = State::default();
+
+    let sealed = seal_stale(&dir, now, DAY, &mut state).unwrap();
+
+    assert!(sealed.is_empty());
+    assert!(fresh.exists(), "another instance may be about to write its start line");
+    assert!(!old.exists(), "a start-less journal older than the cutoff is discarded");
+    assert_eq!(state, State::default());
+
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn seal_stale_skips_an_entry_it_cannot_read() {
+    let dir = scratch("stale-unreadable");
+    let now = NOON + 10 * DAY;
+    // A folder named like a journal cannot be read as a file.
+    std::fs::create_dir_all(dir.join("journal").join("5555555555555555.jsonl")).unwrap();
+    write_journal(&dir, "6666666666666666", &four_events_two_marks(NOON));
+    let mut state = State::default();
+
+    let sealed = seal_stale(&dir, now, DAY, &mut state).unwrap();
+
+    assert_eq!(sealed, vec![dir.join("queue").join("session-6666666666666666.json")]);
+    assert!(dir.join("journal").join("5555555555555555.jsonl").is_dir());
 
     std::fs::remove_dir_all(&dir).unwrap();
 }

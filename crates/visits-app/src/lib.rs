@@ -6,8 +6,11 @@
 //! A report is a plain struct with public fields. `Session::to_bytes`,
 //! `Crash::to_bytes` and `Check::to_query` build the wire form by hand and run
 //! it through `visits_core::app`, the same code the collector validates with,
-//! so the program can never write what the collector would refuse, and the
-//! bytes returned are the bytes the program sends and shows the person.
+//! so the program can never write what the collector would refuse for its
+//! shape, and the bytes returned are the bytes the program sends and shows the
+//! person. A source build's reports pass this check (the collector's `403` for
+//! `ch: source` and `mode()` are its guards), so it records and seals like any
+//! other and never uploads.
 //!
 //! This departs from the design's 4.1, which has constructors that take the
 //! enums and refuse the rest: the fields are public and the check happens once,

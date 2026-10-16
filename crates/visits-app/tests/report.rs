@@ -172,15 +172,21 @@ fn a_named_channel_with_a_capital_fails_its_pattern() {
 }
 
 #[test]
-fn a_source_build_never_produces_bytes() {
+fn a_source_build_writes_its_bytes_and_the_rest_is_still_checked() {
     let mut s = session();
     s.env.ch = Channel::Source;
-    assert_eq!(s.to_bytes(), Err(Invalid::Channel));
+    assert_eq!(as_value(&s.to_bytes().unwrap())["ch"], "source");
     let mut c = crash();
     c.env.ch = Channel::Source;
-    assert_eq!(c.to_bytes(), Err(Invalid::Channel));
+    assert_eq!(as_value(&c.to_bytes().unwrap())["ch"], "source");
     let check = Check { env: c.env.clone(), rd: 0 };
-    assert_eq!(check.to_query(), Err(Invalid::Channel));
+    assert!(check.to_query().unwrap().contains("ch=source"));
+
+    // The source channel excuses nothing else.
+    s.iw = 3;
+    assert_eq!(s.to_bytes(), Err(Invalid::Pattern("iw".into())));
+    let bad = Check { env: c.env.clone(), rd: -2 };
+    assert_eq!(bad.to_query(), Err(Invalid::Pattern("rd".into())));
 }
 
 #[test]

@@ -1,7 +1,14 @@
 //! The report types of the wire spec's section 6 and the bytes they put on the
 //! wire. Every field is public; `to_bytes` and `to_query` build the JSON by hand
 //! and run it through `visits_core::app`, so nothing the collector would refuse
-//! ever leaves this crate.
+//! for its shape ever leaves this crate.
+//!
+//! The one refusal they let through is the source channel (`Invalid::Channel`,
+//! which the collector reads only after every other check has passed): a source
+//! build records, seals and queues like any other, so a developer can read their
+//! own journal and queue. The guard that keeps it from uploading is `mode()`,
+//! which never allows uploads for a source build, and the collector, which
+//! answers it `403`.
 
 use serde_json::{Map, Value};
 use std::collections::BTreeMap;
@@ -415,8 +422,18 @@ impl Check {
             .map(|(k, v)| format!("{k}={}", encode(v)))
             .collect::<Vec<_>>()
             .join("&");
-        validate_check(&query)?;
+        allow_source(validate_check(&query))?;
         Ok(query)
+    }
+}
+
+/// Passes a validation whose only fault is the source channel: the collector
+/// checks `ch` after everything else, so `Invalid::Channel` means the report is
+/// otherwise valid.
+fn allow_source<T>(result: Result<T, Invalid>) -> Result<(), Invalid> {
+    match result {
+        Ok(_) | Err(Invalid::Channel) => Ok(()),
+        Err(e) => Err(e),
     }
 }
 
@@ -424,7 +441,7 @@ impl Check {
 fn checked(m: Map<String, Value>) -> Result<Vec<u8>, Invalid> {
     // Serializing a map of strings, numbers and booleans cannot fail.
     let bytes = serde_json::to_vec(&Value::Object(m)).map_err(|_| Invalid::Json)?;
-    validate_report(&bytes)?;
+    allow_source(validate_report(&bytes))?;
     Ok(bytes)
 }
 

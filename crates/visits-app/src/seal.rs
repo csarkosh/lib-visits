@@ -12,6 +12,11 @@
 //! last mark line the focus totals and the rejected count. A journal with no
 //! start line, or whose envelope cannot be read, cannot be reported and is
 //! deleted.
+//!
+//! Two crash windows remain, both harmless. A crash between the report's rename
+//! and the journal's removal leaves the journal to be sealed again, so the
+//! collector may see the same `sid` twice. A crash between the two renames
+//! leaves a `.retry` with no `.json`, which the queue's drain removes.
 
 use crate::report::{End, Envelope, Event, Session};
 use crate::state::State;
@@ -20,13 +25,14 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::time::UNIX_EPOCH;
 use visits_core::app::is_hex;
 
 /// Seconds in a UTC day.
 const DAY: u64 = 86_400;
 
 /// What a journal says about its session.
-struct Journal {
+struct Recorded {
     start: u64,
     env: Envelope,
     ev: Vec<Event>,
@@ -37,7 +43,7 @@ struct Journal {
 }
 
 /// Reads a journal's complete lines; `None` when it has no readable start line.
-fn read(bytes: &[u8]) -> Option<Journal> {
+fn read(bytes: &[u8]) -> Option<Recorded> {
     let complete = &bytes[..bytes.iter().rposition(|&b| b == b'\n')?];
     let mut head: Option<(u64, Envelope)> = None;
     let mut ev = Vec::new();
@@ -55,14 +61,14 @@ fn read(bytes: &[u8]) -> Option<Journal> {
         } else if let Some(e) = v.get("ev").and_then(Event::from_value) {
             last_t = last_t.max(e.t);
             ev.push(e);
-        } else if let Some(m) = v.get("mark").and_then(mark) {
-            last_t = last_t.max(m.0);
-            focus = m.1;
-            rejected = m.2;
+        } else if let Some((t, f, r)) = v.get("mark").and_then(mark) {
+            last_t = last_t.max(t);
+            focus = f;
+            rejected = r;
         }
     }
     let (start, env) = head?;
-    Some(Journal { start, env, ev, focus, rejected, last_t })
+    Some(Recorded { start, env, ev, focus, rejected, last_t })
 }
 
 /// Reads a mark line's `t`, focus totals and rejected count.
@@ -94,8 +100,10 @@ fn write_whole(path: &Path, bytes: &[u8]) -> io::Result<()> {
 ///
 /// `Ok(None)` when there is nothing to queue: no journal for `sid`, a journal
 /// without a start line (deleted), or a session the wire would refuse, such as
-/// one from a source build (deleted and counted in `state.rejected`). A `sid`
-/// that is not 16 to 32 lowercase hex characters is `InvalidInput`.
+/// one whose journal names a channel outside the name pattern (deleted and
+/// counted in `state.rejected`). A source build's session is queued like any
+/// other; `mode()` keeps it from uploading. A `sid` that is not 16 to 32
+/// lowercase hex characters is `InvalidInput`.
 pub fn seal(dir: &Path, sid: &str, end: End, now: u64, state: &mut State) -> io::Result<Option<PathBuf>> {
     if !is_hex(sid, 16, 32) {
         return Err(io::Error::new(io::ErrorKind::InvalidInput, "a session id is 16 to 32 lowercase hex characters"));
@@ -153,9 +161,13 @@ pub fn seal(dir: &Path, sid: &str, end: End, now: u64, state: &mut State) -> io:
 
 /// Seals as `Unknown` every journal last seen (its start plus its greatest `t`)
 /// before `now - older_than_secs`, oldest first so the first launch is the
-/// earliest one, and returns the reports queued. A journal with no start line is
-/// deleted as `seal` deletes it: `Journal::open` writes that line as soon as it
-/// creates the file. A file in the folder that is not `<sid>.jsonl` is left alone.
+/// earliest one, and returns the reports queued.
+///
+/// A journal with no start line has no time of its own, so its file's
+/// modification time stands in: it is deleted, as `seal` deletes it, only when
+/// that time is before the same cutoff, and left alone otherwise, since another
+/// instance may be between creating it and writing its first line. A file that
+/// cannot be read, or that is not `<sid>.jsonl`, is left alone.
 pub fn seal_stale(dir: &Path, now: u64, older_than_secs: u64, state: &mut State) -> io::Result<Vec<PathBuf>> {
     let entries = match fs::read_dir(dir.join("journal")) {
         Ok(entries) => entries,
@@ -171,11 +183,12 @@ pub fn seal_stale(dir: &Path, now: u64, older_than_secs: u64, state: &mut State)
         if !is_hex(sid, 16, 32) {
             continue;
         }
-        let bytes = fs::read(entry.path())?;
+        let Ok(bytes) = fs::read(entry.path()) else { continue };
         match read(&bytes) {
             Some(j) if j.start.saturating_add(j.last_t) < cutoff => stale.push((j.start, sid.to_string())),
             Some(_) => {}
-            None => stale.push((0, sid.to_string())),
+            None if modified_before(&entry, cutoff) => stale.push((0, sid.to_string())),
+            None => {}
         }
     }
     stale.sort();
@@ -186,4 +199,12 @@ pub fn seal_stale(dir: &Path, now: u64, older_than_secs: u64, state: &mut State)
         }
     }
     Ok(sealed)
+}
+
+/// Whether a file was last modified before `cutoff` (unix seconds); `false`
+/// when its time cannot be read, so a file of unknown age is kept.
+fn modified_before(entry: &fs::DirEntry, cutoff: u64) -> bool {
+    let modified = entry.metadata().and_then(|m| m.modified()).ok();
+    let secs = modified.and_then(|t| t.duration_since(UNIX_EPOCH).ok()).map(|d| d.as_secs());
+    secs.is_some_and(|secs| secs < cutoff)
 }
