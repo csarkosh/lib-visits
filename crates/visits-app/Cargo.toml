@@ -1,0 +1,12 @@
+[package]
+name = "visits-app"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "The client half of lib-visits for installed programs: typed reports, consent, journal and queue."
+
+[dependencies]
+visits-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+toml = "1"
