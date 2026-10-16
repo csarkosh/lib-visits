@@ -23,8 +23,14 @@ pub struct Serve {
     #[arg(long, env = "VISITS_PATH", default_value = "/v")]
     pub path: String,
     /// A site allowed to post, e.g. https://example.com (repeatable; env: comma-separated).
-    #[arg(long, env = "VISITS_ORIGINS", value_delimiter = ',', required = true)]
+    #[arg(long, env = "VISITS_ORIGINS", value_delimiter = ',')]
     pub origin: Vec<String>,
+    /// An app allowed to report, as NAME or NAME=https://redirect (repeatable; env: comma-separated).
+    #[arg(long = "app", env = "VISITS_APPS", value_delimiter = ',')]
+    pub app: Vec<String>,
+    /// The app report route; its check lives at <app-path>/check.
+    #[arg(long, env = "VISITS_APP_PATH", default_value = "/a")]
+    pub app_path: String,
     /// The environment variable holding the hash secret.
     #[arg(long, default_value = "VISITS_SECRET")]
     pub secret_env: String,
@@ -59,11 +65,41 @@ impl Serve {
     }
 }
 
+/// Parses `NAME` or `NAME=https://redirect` into the name and the optional redirect.
+pub fn parse_app(s: &str) -> Result<(String, Option<String>), String> {
+    let (name, redirect) = match s.split_once('=') {
+        Some((n, r)) => (n, Some(r)),
+        None => (s, None),
+    };
+    let mut chars = name.chars();
+    let ok = name.len() <= 32
+        && chars.next().is_some_and(|c| c.is_ascii_lowercase())
+        && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-');
+    if !ok { return Err(format!("--app name must match [a-z][a-z0-9_-]{{0,31}}, got {name:?}")); }
+    if let Some(r) = redirect {
+        if !r.starts_with("https://") { return Err(format!("--app {name}: the redirect must start with https://, got {r:?}")); }
+        // A value the check handler could not send as a Location header is refused here, once.
+        if axum::http::HeaderValue::from_str(r).is_err() { return Err(format!("--app {name}: the redirect is not a valid header value")); }
+    }
+    Ok((name.to_string(), redirect.map(str::to_string)))
+}
+
+/// Checks the beacon and report routes so that no two of them overlap (axum panics on that).
+pub fn check_paths(path: &str, app_path: &str) -> Result<(), String> {
+    if !app_path.starts_with('/') || app_path == "/healthcheck" {
+        return Err(format!("--app-path must start with / and not be /healthcheck, got {app_path}"));
+    }
+    if app_path == path || path == format!("{app_path}/check") {
+        return Err(format!("--path {path} overlaps --app-path {app_path} and its /check route"));
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     fn serve(limit: &str) -> Serve {
-        Serve { listen: String::new(), path: "/v".into(), origin: vec![], secret_env: String::new(), sink: "stdout".into(), geoip: None, trusted_proxies: 0, limit: limit.into(), log_ip: false, ignore_ips: vec![] }
+        Serve { listen: String::new(), path: "/v".into(), origin: vec![], app: vec![], app_path: "/a".into(), secret_env: String::new(), sink: "stdout".into(), geoip: None, trusted_proxies: 0, limit: limit.into(), log_ip: false, ignore_ips: vec![] }
     }
     #[test]
     fn limit_parts_validates() {
@@ -73,5 +109,29 @@ mod tests {
         assert!(serve("0/1").limit_parts().is_err());
         assert!(serve("60/-1").limit_parts().is_err());
         assert!(serve("inf/1").limit_parts().is_err());
+    }
+    #[test]
+    fn parse_app_accepts_name_and_redirect() {
+        assert_eq!(parse_app("arkos=https://x").unwrap(), ("arkos".to_string(), Some("https://x".to_string())));
+        assert_eq!(parse_app("arkos").unwrap(), ("arkos".to_string(), None));
+        assert_eq!(parse_app("my-app_2=https://a.b/c?d=e").unwrap().0, "my-app_2");
+    }
+    #[test]
+    fn parse_app_refuses_bad_input() {
+        for bad in ["", "Arkos", "1app", "-a", "a b", "a.b", "arkos=", "arkos=http://x", "arkos=ftp://x", "arkos=x", "arkos=https://x\n", "arkos=https://x\u{7f}", "=https://x"] {
+            assert!(parse_app(bad).is_err(), "{bad:?} should be refused");
+        }
+        assert!(parse_app(&format!("a{}", "b".repeat(31))).is_ok());
+        assert!(parse_app(&format!("a{}", "b".repeat(32))).is_err());
+    }
+    #[test]
+    fn check_paths_refuses_overlaps() {
+        assert!(check_paths("/v", "/a").is_ok());
+        assert!(check_paths("/v", "a").is_err());
+        assert!(check_paths("/v", "/v").is_err());
+        assert!(check_paths("/v", "/healthcheck").is_err());
+        assert!(check_paths("/a", "/a").is_err());
+        assert!(check_paths("/a/check", "/a").is_err());
+        assert!(check_paths("/v", "/v/check").is_ok());
     }
 }

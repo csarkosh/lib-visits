@@ -20,10 +20,20 @@ async fn serve(args: Serve) -> anyhow::Result<()> {
     if !args.path.starts_with('/') || args.path == "/healthcheck" {
         anyhow::bail!("--path must start with / and not be /healthcheck, got {}", args.path);
     }
+    if args.origin.is_empty() && args.app.is_empty() {
+        anyhow::bail!("give at least one --origin or --app, or there is nothing to accept");
+    }
+    let mut apps = BTreeMap::new();
+    for spec in &args.app {
+        let (name, redirect) = visits::config::parse_app(spec).map_err(|e| anyhow::anyhow!(e))?;
+        apps.insert(name, redirect);
+    }
+    if !apps.is_empty() { visits::config::check_paths(&args.path, &args.app_path).map_err(|e| anyhow::anyhow!(e))?; }
     let (burst, per_second) = args.limit_parts()?;
     let ignore = visits::ignore::parse_list(&args.ignore_ips).map_err(|e| anyhow::anyhow!("--ignore-ips: {e}"))?;
     if !ignore.is_empty() { eprintln!("visits: dropping beacons from {} ignored address range(s)", ignore.len()); }
     let geoip = load_geoip(args.geoip.as_deref())?;
+    let app_names = apps.keys().cloned().collect::<Vec<_>>().join(", ");
     let state = Arc::new(AppState {
         origins: args.origin.iter().map(|o| o.trim_end_matches('/').to_string()).collect::<HashSet<_>>(),
         path: args.path.clone(),
@@ -34,11 +44,14 @@ async fn serve(args: Serve) -> anyhow::Result<()> {
         log_ip: args.log_ip,
         geoip,
         ignore,
-        apps: BTreeMap::new(),
-        app_path: "/a".into(),
+        apps,
+        app_path: args.app_path.clone(),
     });
     let listener = tokio::net::TcpListener::bind(&args.listen).await?;
     eprintln!("visits: listening on {} for {} from {}", args.listen, args.path, args.origin.join(", "));
+    if !args.app.is_empty() {
+        eprintln!("visits: apps on {}: {}", args.app_path, app_names);
+    }
     axum::serve(listener, router(state).into_make_service_with_connect_info::<std::net::SocketAddr>())
         .with_graceful_shutdown(shutdown())
         .await?;
