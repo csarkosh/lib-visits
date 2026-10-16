@@ -22,7 +22,7 @@ use crate::seal::write_whole;
 use crate::state::State;
 use serde_json::{json, Value};
 use std::fs;
-use std::io::{self, Write};
+use std::io;
 use std::path::{Path, PathBuf};
 use visits_core::app::is_hex;
 
@@ -187,18 +187,20 @@ impl Queue {
     /// backoff; any other `4xx` deletes both, since the collector will refuse
     /// it again.
     pub fn drain(&self, t: &dyn Transport, url: &str, user_agent: &str, mode: &Mode, now: u64, state: &mut State) -> Outcome {
-        self.drain_to(t, url, user_agent, mode, now, state, &mut io::stderr())
+        self.drain_to(t, url, user_agent, mode, now, state, &mut |line| eprintln!("{line}"))
     }
 
-    /// `drain`, printing what `mode.log` prints to `log`.
+    /// `drain`, handing each line `mode.log` prints to `log`, one call per
+    /// line and without its newline, so a test can collect what would reach
+    /// stderr.
     #[allow(clippy::too_many_arguments)]
-    fn drain_to(&self, t: &dyn Transport, url: &str, user_agent: &str, mode: &Mode, now: u64, state: &mut State, log: &mut dyn Write) -> Outcome {
+    fn drain_to(&self, t: &dyn Transport, url: &str, user_agent: &str, mode: &Mode, now: u64, state: &mut State, log: &mut dyn FnMut(&str)) -> Outcome {
         let mut out = Outcome::default();
         self.sweep(now, &mut out);
         for path in self.due(now) {
             if mode.log {
                 if let Ok(bytes) = fs::read(&path) {
-                    let _ = writeln!(log, "visits-app: would send {}: {}", path.display(), String::from_utf8_lossy(&bytes));
+                    log(&format!("visits-app: would send {}: {}", path.display(), String::from_utf8_lossy(&bytes)));
                 }
                 out.skipped += 1;
                 continue;
@@ -297,15 +299,26 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
         let queue = dir.join("queue");
         fs::create_dir_all(&queue).unwrap();
-        let path = queue.join("crash-a41c0e9d7b3258f6.json");
-        fs::write(&path, br#"{"k":"crash"}"#).unwrap();
-        Retry::fresh(100).write(&path).unwrap();
+        // Written session first, so the lines must come in name order, not in
+        // the order the files were made.
+        let session = queue.join("session-3f9a1c27b84d5e60.json");
+        fs::write(&session, br#"{"k":"session"}"#).unwrap();
+        Retry::fresh(100).write(&session).unwrap();
+        let crash = queue.join("crash-a41c0e9d7b3258f6.json");
+        fs::write(&crash, br#"{"k":"crash"}"#).unwrap();
+        Retry::fresh(100).write(&crash).unwrap();
         let mode = Mode { usage: Usage::On, crashes: Crashes::Always, uploads: false, invite: false, log: true, reason: Some("telemetry log") };
-        let mut printed = Vec::new();
-        let out = Queue::new(&dir).drain_to(&Never, "u", "a", &mode, 100, &mut State::default(), &mut printed);
-        assert_eq!(out, Outcome { skipped: 1, ..Outcome::default() });
-        assert_eq!(String::from_utf8(printed).unwrap(), format!("visits-app: would send {}: {{\"k\":\"crash\"}}\n", path.display()));
-        assert!(path.exists());
+        let mut lines = Vec::new();
+        let out = Queue::new(&dir).drain_to(&Never, "u", "a", &mode, 100, &mut State::default(), &mut |line| lines.push(line.to_string()));
+        assert_eq!(out, Outcome { skipped: 2, ..Outcome::default() });
+        assert_eq!(
+            lines,
+            [
+                format!("visits-app: would send {}: {{\"k\":\"crash\"}}", crash.display()),
+                format!("visits-app: would send {}: {{\"k\":\"session\"}}", session.display()),
+            ]
+        );
+        assert!(crash.exists() && session.exists());
         fs::remove_dir_all(&dir).unwrap();
     }
 
