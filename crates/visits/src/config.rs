@@ -84,8 +84,19 @@ pub fn parse_app(s: &str) -> Result<(String, Option<String>), String> {
     Ok((name.to_string(), redirect.map(str::to_string)))
 }
 
+/// Refuses a route path that holds `{`, `}` or `:`, which axum 0.8 reads as a
+/// capture (and panics on in the old `:x` spelling), so the flag names a literal path.
+pub fn check_route(flag: &str, path: &str) -> Result<(), String> {
+    if path.contains(['{', '}', ':']) {
+        return Err(format!("{flag} must not contain {{, }} or :, got {path}"));
+    }
+    Ok(())
+}
+
 /// Checks the beacon and report routes so that no two of them overlap (axum panics on that).
 pub fn check_paths(path: &str, app_path: &str) -> Result<(), String> {
+    check_route("--path", path)?;
+    check_route("--app-path", app_path)?;
     if !app_path.starts_with('/') || app_path == "/healthcheck" {
         return Err(format!("--app-path must start with / and not be /healthcheck, got {app_path}"));
     }
@@ -140,5 +151,15 @@ mod tests {
         assert!(check_paths("/a", "/a").is_err());
         assert!(check_paths("/a/check", "/a").is_err());
         assert!(check_paths("/v", "/v/check").is_ok());
+    }
+    #[test]
+    fn route_paths_refuse_axum_capture_syntax() {
+        for bad in ["/{x}", "/a{", "/a}", "/:x", "/a:b"] {
+            assert!(check_route("--path", bad).is_err(), "{bad:?}");
+            assert!(check_paths("/v", bad).is_err(), "{bad:?}");
+            assert!(check_paths(bad, "/a").is_err(), "{bad:?}");
+        }
+        assert!(check_route("--path", "/v").is_ok());
+        assert!(check_route("--path", "/my-app_2/v.1").is_ok());
     }
 }

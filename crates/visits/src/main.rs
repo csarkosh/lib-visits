@@ -20,6 +20,7 @@ async fn serve(args: Serve) -> anyhow::Result<()> {
     if !args.path.starts_with('/') || args.path == "/healthcheck" {
         anyhow::bail!("--path must start with / and not be /healthcheck, got {}", args.path);
     }
+    visits::config::check_route("--path", &args.path).map_err(|e| anyhow::anyhow!(e))?;
     if args.origin.is_empty() && args.app.is_empty() {
         anyhow::bail!("give at least one --origin or --app, or there is nothing to accept");
     }
