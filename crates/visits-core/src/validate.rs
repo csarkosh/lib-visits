@@ -17,6 +17,14 @@ pub enum Invalid {
     Type(String),
     Long(String),
     Keys(String),
+    /// A key section 6 does not know, at any depth.
+    Unknown(String),
+    /// A value outside its pattern, enum, length or minimum (section 6).
+    Pattern(String),
+    /// A report from a source build, refused with `403`.
+    Channel,
+    /// A check posted as a report, or a report sent as a check.
+    Kind,
 }
 
 impl fmt::Display for Invalid {
@@ -30,6 +38,10 @@ impl fmt::Display for Invalid {
             Invalid::Type(k) => write!(f, "bad type: {k}"),
             Invalid::Long(k) => write!(f, "too long: {k}"),
             Invalid::Keys(k) => write!(f, "too many keys: {k}"),
+            Invalid::Unknown(k) => write!(f, "unknown key: {k}"),
+            Invalid::Pattern(k) => write!(f, "bad value: {k}"),
+            Invalid::Channel => write!(f, "source channel"),
+            Invalid::Kind => write!(f, "wrong kind for this route"),
         }
     }
 }
