@@ -17,3 +17,4 @@ Web Vitals module) and `crates/` (a Rust collector, one static binary). Design:
   (`?layout=vertical`: the same visit stacked, without the lead and the time strip). Needs Chrome and
   Pillow. csarko.sh copies the vertical pair for its `/apps` card
   (`.agents/skills/site-quality/assets/apps/lib-visits*.png`); refresh that copy too.
+- App reports: `POST <app-path>` (default `/a`) and `GET <app-path>/check` in `crates/visits`, enabled by `--app`; the wire is section 6 of `spec/SPEC.md` with fixtures in `spec/fixtures/app/`. The client crate is `crates/visits-app`. `cargo test --workspace` covers all three crates.

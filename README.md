@@ -81,6 +81,8 @@ flowchart LR
 
 **Your own box**: nginx or Caddy in front, `--sink file:/var/log/visits.jsonl`, and logrotate with `copytruncate` (the file is opened once, in append mode).
 
+**Reports from installed programs** (below): the collector writes no address for them, but the platform's request log does; Cloud Run's carries the remote address of every request. Exclude the service's request-log entries for the report routes, including the `302` of a check, from the default bucket, or say on the program's disclosure page that the platform keeps the address for its retention.
+
 ## More
 
 - Sinks: `--sink stdout` (default) or `--sink file:<path>`.
@@ -100,3 +102,23 @@ flowchart LR
 - Another language: `spec/SPEC.md` is the whole contract.
 - Not collected, on purpose: canvas, WebGL, audio, fonts, high-entropy client
   hints, the query string beyond campaign parameters, anything across days.
+
+## Installed programs
+
+A program on someone's computer can report to the same collector. A report is a typed JSON object (a session summary, a crash or the daily update check) with no identifier in it, and the collector computes no visit for it and writes no address. Tell the collector which programs may post: `--app arkos=https://example.com/arkos/latest.json` (repeatable; `VISITS_APPS`, comma-separated). The redirect is where a check is sent; leave it off and a check is answered `204`.
+
+- Two routes: `POST /a` takes a report and `GET /a/check` takes the day's update check as a query string; `--app-path` (or `VISITS_APP_PATH`) moves them. The check answers `302` to the redirect, so the update itself never passes through the collector.
+- The `User-Agent` must be `<app>/<version>` and the report's `app` must be an allowed one, or the answer is `403`. A report from a source build (`ch` of `source`) is `403` and is not written.
+- A report may carry enumerated values, versions, counts and hashes. It may not carry free text, an identifier or any key the schema does not know: that report is refused whole with `400`, not trimmed.
+
+The client half is a crate, `visits-app`, with the report types, the journal, the queue and the consent rules; the program supplies the network and the window.
+
+    visits-app = { git = "https://github.com/csarkosh/lib-visits", tag = "v0.3.0" }
+
+The program lists the events it records and what each may carry in a file it ships:
+
+    [events.pane_open]
+    kind = ["terminal", "viewer", "browser"]
+    [events.window_open]
+
+The program's loop (seal, queue, upload, check) is one `no_run` example in the crate docs, `crates/visits-app/src/lib.rs`; the wire format is section 6 of `spec/SPEC.md`.
