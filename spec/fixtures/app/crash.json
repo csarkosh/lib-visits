@@ -1,0 +1,42 @@
+{
+  "v": 2,
+  "app": "arkos",
+  "ver": "0.5.0",
+  "bin": "app",
+  "os": "macos",
+  "osv": 15,
+  "arch": "arm64",
+  "ch": "release",
+  "k": "crash",
+  "inc": "a41c0e9d7b3258f6",
+  "ck": "panic",
+  "commit": "9f2c1ab4e7d03b65a1c8f2e94d7b06a35c81e2fd",
+  "pk": "other",
+  "mh": "b5bb9d8014a0f9b1d61e21e796d78dccdf1352f23cd32812f4850b878ae4944c",
+  "file": "/src/editor/buffer.rs",
+  "line": 412,
+  "frames": [
+    [
+      0,
+      4096
+    ],
+    [
+      1,
+      81920
+    ]
+  ],
+  "images": [
+    [
+      "arkos",
+      "0123456789abcdef0123456789abcdef",
+      52428800
+    ],
+    [
+      "libsystem_c.dylib",
+      "fedcba9876543210fedcba9876543210",
+      3145728
+    ]
+  ],
+  "up": "<1h",
+  "mem": "unknown"
+}

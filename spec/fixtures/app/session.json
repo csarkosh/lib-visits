@@ -1,0 +1,50 @@
+{
+  "v": 2,
+  "app": "arkos",
+  "ver": "0.5.0",
+  "bin": "app",
+  "os": "macos",
+  "osv": 15,
+  "arch": "arm64",
+  "ch": "release",
+  "k": "session",
+  "sid": "3f9a1c27b84d5e60",
+  "len": 1840,
+  "end": "quit",
+  "iw": 20629,
+  "rd": 1,
+  "focus": {
+    "editor": 1210,
+    "terminal": 410,
+    "settings": 20
+  },
+  "ev": [
+    {
+      "n": "launch",
+      "t": 0
+    },
+    {
+      "n": "command",
+      "t": 12,
+      "d": {
+        "id": "file.open",
+        "src": "palette",
+        "n": 3,
+        "restored": true
+      }
+    },
+    {
+      "n": "surface_open",
+      "t": 95,
+      "d": {
+        "name": "terminal"
+      }
+    },
+    {
+      "n": "quit",
+      "t": 1840
+    }
+  ],
+  "ev_dropped": 0,
+  "ev_rejected": 1
+}

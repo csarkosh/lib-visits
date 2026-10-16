@@ -99,3 +99,122 @@ of receipt. Cloud Logging and most log agents read `time` as the entry's
 timestamp, so beacons that arrive together (after a cold start, say) keep their
 order; `s.at` stays the time of receipt in whole seconds. Key order is not
 significant.
+
+## 6. App reports and checks (version 2)
+
+Version 1 above is unchanged. Section 6 describes typed reports from installed
+programs and their update checks. A report has no identifier and no address;
+the collector computes no visit for one.
+
+### 6.1 Transport
+
+| Request | Meaning |
+|---|---|
+| `POST <path>` (default `/a`) | the body is the JSON of one report, an object; an array is `400`. Cap 64 KB (`413`). |
+| `GET <path>/check` | the check's keys as query parameters, nothing else |
+| any other method | `405` |
+
+- `Content-Type` is not checked.
+- `User-Agent` must be `<app>/<version>`, optionally followed by a space and anything, where `<app>` is the report's `app`; else `403`.
+- There is no `Origin`. A request that carries one is `403`.
+- `app` must be one the collector allows; else `403`.
+- A report with `ch` equal to `source` is `403` and is not written.
+- A report with any key the schema does not know, at any depth (including a top-level `s` or `time`), is refused whole with `400`; nothing is trimmed.
+- The check is GET only. A POST body with `k` equal to `check` is `400`; a GET with any other `k` is `400`.
+- Answers: `204` report accepted, or check with no redirect configured; `302` check, with `Location` set to the app's redirect; `400` malformed, unknown key, bad value; `403`; `413`; `429`; `405`. Every answer carries `cache-control: no-store`. An error body is `{"error": "<reason>"}`.
+- A valid check is written before the answer is sent.
+- The rate limit is the beacon route's, by address, shared between the routes.
+
+### 6.2 The envelope
+
+Every report and check carries these keys, all required, and no key outside its kind's table.
+
+| Key | Type | Rule |
+|---|---|---|
+| `v` | integer | `2`; else `unknown version` |
+| `app` | string | `^[a-z][a-z0-9_-]{0,31}$` |
+| `ver` | string | `^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$`, at most 32 |
+| `bin` | string | `^[a-z][a-z0-9_-]{0,31}$` |
+| `os` | string | `macos`, `linux`, `windows` |
+| `osv` | integer | `>= 0`, the OS major version |
+| `arch` | string | `arm64`, `x86_64` |
+| `ch` | string | `^[a-z][a-z0-9_-]{0,31}$`: `release`, `source`, or a name the program adds (`tap`, `direct`) |
+| `k` | string | `check`, `session`, `crash` |
+
+### 6.3 check
+
+| Key | Type | Rule |
+|---|---|---|
+| `rd` | integer, required | `>= -1`: days since the program's last check through this route, rounded down; `-1` the first ever |
+
+A duplicate key in the query is refused (`400`); the last value does not win.
+
+### 6.4 session
+
+| Key | Type | Rule |
+|---|---|---|
+| `sid` | string, required | `^[0-9a-f]{16,32}$` |
+| `len` | integer, required | `>= 0`, seconds |
+| `end` | string, required | `quit`, `lost`, `unknown` |
+| `iw` | integer, required | `>= 0`, days since the epoch of first launch, a multiple of 7 |
+| `rd` | integer, required | `>= -1`, days since the last session report |
+| `focus` | object, required | at most 16 keys, `^[a-z][a-z0-9_]{0,31}$`, values integers `>= 0` |
+| `ev` | array, required | at most 200 events |
+| `ev_dropped` | integer, optional | `>= 0` |
+| `ev_rejected` | integer, optional | `>= 0` |
+
+An event:
+
+| Key | Type | Rule |
+|---|---|---|
+| `n` | string, required | `^[a-z][a-z0-9_]{0,31}$` |
+| `t` | integer, required | `>= 0`, seconds since launch |
+| `d` | object, optional | at most 6 keys, `^[a-z][a-z0-9_]{0,31}$`; values are strings of at most 64 characters matching `^[A-Za-z0-9_.:/-]*$`, integers, or booleans |
+
+More than 200 events, more than 6 `d` keys or more than 16 `focus` keys is `400`, not `413`.
+
+### 6.5 crash
+
+| Key | Type | Rule |
+|---|---|---|
+| `inc` | string, required | `^[0-9a-f]{16,32}$` |
+| `ck` | string, required | `panic`, `signal` |
+| `commit` | string, required | 7 to 40 lowercase hex |
+| `pk` | string, required | `^[a-z][a-z0-9_]{0,63}$`, or `other` |
+| `mh` | string, optional | 64 lowercase hex, SHA-256 of the message's first line |
+| `file` | string, required | `^[A-Za-z0-9_./-]*$`, at most 256 |
+| `line` | integer, required | `>= 0` |
+| `frames` | array, required | at most 64 pairs of integers `>= 0`: `[image index, offset]` |
+| `images` | array, required | at most 32 triples `[name, uuid, size]`: name `^[A-Za-z0-9_.-]{1,64}$`, uuid 32 lowercase hex, size integer `>= 0` |
+| `sig` | integer, optional | `>= 0` |
+| `up` | string, required | `<1m`, `<10m`, `<1h`, `<1d`, `>=1d` |
+| `mem` | string, optional | `normal`, `warn`, `critical`, `unknown` |
+
+### 6.6 Value rules
+
+Every string has a pattern and a cap; there is no free text. A value that fails
+its pattern, an integer below its minimum, or a value of the wrong type is
+`400`. A path in an error is dotted with no index (`ev.d.x`, `images.uuid`).
+
+### 6.7 Decoration
+
+The collector adds `s` and nothing else:
+
+| Key | Value |
+|---|---|
+| `sv` | `2` |
+| `at` | RFC 3339 UTC time of the request, whole seconds |
+
+No `visit`, `host`, browser, OS from headers, or country.
+
+### 6.8 JSON line
+
+One object per line: the report's keys, `s`, and `time`, the time of receipt as
+RFC 3339 with milliseconds (a report carries no clock of its own). Nothing about
+the request is written. Key order is not significant.
+
+### 6.9 Fixtures
+
+`spec/fixtures/app/`: `check.json` (`query`), `session.json` and `crash.json`
+(valid report bodies), `invalid.json` (`reason`, `status`, and a `report` body
+or a `check` query; each report is sent as an `arkos/0.5.0` agent).
