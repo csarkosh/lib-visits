@@ -123,7 +123,7 @@ fn a_journal_seals_into_the_report_it_describes() {
 #[test]
 fn a_journal_the_journal_wrote_seals_with_what_it_recorded() {
     let dir = scratch("written");
-    let allow = Allowlist::from_toml("[events.launch]\n[events.pane_open]\nkind = [\"terminal\"]\n").unwrap();
+    let allow = Allowlist::from_toml("[events.launch]\n[events.pane_open]\nkind = [\"terminal\"]\n[focus]\nsurfaces = [\"terminal\"]\n").unwrap();
     let mut journal = Journal::open(&dir, SID, &envelope(), allow, NOON).unwrap();
     journal.event(event("launch", 0, &[]), NOON);
     journal.event(event("pane_open", 0, &[("kind", DValue::Str("terminal".into()))]), NOON + 12);
@@ -142,6 +142,34 @@ fn a_journal_the_journal_wrote_seals_with_what_it_recorded() {
     assert_eq!(report["len"], 60);
     assert_eq!(report["ch"], "tap");
 
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn the_events_the_journal_dropped_are_added_to_ev_dropped() {
+    let dir = scratch("dropped");
+    let mut journal = Journal::open(&dir, SID, &envelope(), Allowlist::from_toml("[events.tick]\n").unwrap(), NOON).unwrap();
+    for t in 0..203 {
+        journal.event(event("tick", 0, &[]), NOON + t);
+    }
+    journal.mark(NOON + 300).unwrap();
+    drop(journal);
+    let path = seal(&dir, SID, End::Quit, NOON + 400, &mut State::default()).unwrap().unwrap();
+    let report = read_json(&path);
+    assert_eq!(report["ev"].as_array().unwrap().len(), 200);
+    assert_eq!(report["ev_dropped"], 3);
+
+    // A journal an older build wrote, with more than 200 event lines and a mark
+    // that counts dropped events too, adds both.
+    let sid = "a41c0e9d7b3258f6";
+    let mut text = start_line(NOON);
+    for t in 0..202 {
+        text.push_str(&ev_line("tick", t, json!({})));
+    }
+    text.push_str(&format!("{}\n", json!({ "mark": { "t": 250, "focus": {}, "rejected": 0, "dropped": 4 } })));
+    write_journal(&dir, sid, &text);
+    let path = seal(&dir, sid, End::Quit, NOON + 400, &mut State::default()).unwrap().unwrap();
+    assert_eq!(read_json(&path)["ev_dropped"], 6);
     std::fs::remove_dir_all(&dir).unwrap();
 }
 
@@ -417,5 +445,37 @@ fn the_state_round_trips_through_its_file() {
     std::fs::write(dir.join("state.toml"), "not = [toml").unwrap();
     assert_eq!(State::load(&dir), State::default(), "an unreadable file is the default");
 
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn the_state_is_written_through_a_temp_file_named_for_the_process() {
+    let dir = scratch("state-tmp");
+    // Another process's temp file in the way changes nothing.
+    std::fs::create_dir_all(dir.join("state.toml.tmp")).unwrap();
+    std::fs::create_dir_all(dir.join("state.toml.1.tmp")).unwrap();
+    State { sent: 1, ..State::default() }.save(&dir).unwrap();
+    assert_eq!(State::load(&dir).sent, 1);
+    // This process's own name in the way is the only one that stops it.
+    std::fs::create_dir_all(dir.join(format!("state.toml.{}.tmp", std::process::id()))).unwrap();
+    assert!(State::default().save(&dir).is_err());
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn update_loads_changes_and_saves_the_state() {
+    let dir = scratch("update");
+    State::update(&dir, |s| s.sent += 1).unwrap();
+    assert_eq!(State::load(&dir), State { sent: 1, ..State::default() }, "from no file, the default");
+
+    // What another process saved in between is kept.
+    State { rejected: 2, ..State::load(&dir) }.save(&dir).unwrap();
+    let got = State::update(&dir, |s| {
+        s.sent += 1;
+        seal(&dir, SID, End::Quit, NOON, s)
+    })
+    .unwrap();
+    assert_eq!(got.unwrap(), None, "the closure's own result comes back");
+    assert_eq!(State::load(&dir), State { sent: 2, rejected: 2, ..State::default() });
     std::fs::remove_dir_all(&dir).unwrap();
 }

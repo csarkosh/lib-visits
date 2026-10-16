@@ -9,10 +9,11 @@
 //! - each event the allowlist admits is a line `{"ev": {"n", "t", "d"}}`, spelled
 //!   as in a report (`d` left out when empty), its `t` the seconds since `start`;
 //! - each `Journal::mark` is a line
-//!   `{"mark": {"t": <seconds since start>, "focus": {<surface>: <seconds>}, "rejected": <count>}}`,
+//!   `{"mark": {"t": <seconds since start>, "focus": {<surface>: <seconds>}, "rejected": <count>, "dropped": <count>}}`,
 //!   the running totals since `start`, so the last mark replaces every earlier one;
 //!   `rejected` counts the events the allowlist refused and the focus surfaces
-//!   the wire would refuse.
+//!   it does not list, and `dropped` the events it admitted past the 200th,
+//!   which the journal does not write, so a long session cannot fill the disk.
 //!
 //! Every line is written with one `write_all` of the whole line on a file opened
 //! for appending, so a crash leaves at most one cut line, at the end. A write
@@ -26,20 +27,19 @@ use std::collections::BTreeMap;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
 use std::path::Path;
-use visits_core::app::{is_hex, is_name};
+use visits_core::app::{is_hex, MAX_EVENTS};
 
-/// The most `focus` keys a session report carries (section 6.4).
-const MAX_FOCUS: usize = 16;
-
-/// An open journal: the file, the session's start, the allowlist, and the focus
-/// seconds and rejected events counted since the start.
+/// An open journal: the file, the session's start, the allowlist, the focus
+/// seconds counted since the start, and the events written, refused and dropped.
 #[derive(Debug)]
 pub struct Journal {
     file: File,
     start: u64,
     allow: Allowlist,
     focus: BTreeMap<String, u64>,
+    written: usize,
     rejected: u64,
+    dropped: u64,
 }
 
 impl Journal {
@@ -55,7 +55,7 @@ impl Journal {
         fs::create_dir_all(&folder)?;
         let path = folder.join(format!("{sid}.jsonl"));
         let file = OpenOptions::new().append(true).create_new(true).open(&path)?;
-        let mut journal = Journal { file, start: now, allow, focus: BTreeMap::new(), rejected: 0 };
+        let mut journal = Journal { file, start: now, allow, focus: BTreeMap::new(), written: 0, rejected: 0, dropped: 0 };
         let mut env = env.to_map("session");
         env.remove("v");
         env.remove("k");
@@ -68,24 +68,32 @@ impl Journal {
         Ok(journal)
     }
 
-    /// Records an event at `now`: its `t` is set to the seconds since the start,
-    /// and it is appended if the allowlist admits it and counted as rejected if
-    /// not. A failed write loses the event without disturbing the program.
+    /// Records an event at `now`: its `t` is set to the seconds since the start
+    /// (the caller's `t` is ignored), and it is appended if the allowlist admits
+    /// it and counted as rejected if not. Past 200 admitted events no line is
+    /// written and the event is counted as dropped, since a report carries at
+    /// most 200. A failed write loses the event without disturbing the program.
     pub fn event(&mut self, mut ev: Event, now: u64) {
         ev.t = now.saturating_sub(self.start);
         if self.allow.check(&ev).is_err() {
             self.rejected += 1;
             return;
         }
+        if self.written >= MAX_EVENTS {
+            self.dropped += 1;
+            return;
+        }
+        self.written += 1;
         let _ = self.line(&json!({ "ev": ev.to_value() }));
     }
 
     /// Adds `secs` seconds in the foreground to `surface`, in memory until the
-    /// next `mark`. A surface that is not a name, or a seventeenth surface, is
+    /// next `mark`. A surface the allowlist's `[focus]` table does not list is
     /// left out and counted as rejected, so one bad call cannot make the whole
-    /// session unsendable and still shows up in the data.
+    /// session unsendable and still shows up in the data; the table holds at
+    /// most 16 names, so the totals fit a report.
     pub fn focus(&mut self, surface: &str, secs: u64) {
-        if !is_name(surface) || (self.focus.len() >= MAX_FOCUS && !self.focus.contains_key(surface)) {
+        if !self.allow.allows_surface(surface) {
             self.rejected += 1;
             return;
         }
@@ -93,13 +101,13 @@ impl Journal {
         *total = total.saturating_add(secs);
     }
 
-    /// Appends a mark line with the time since the start, the focus totals and
-    /// the rejected count (refused events and refused surfaces). The program
-    /// calls it at most once a minute.
+    /// Appends a mark line with the time since the start, the focus totals,
+    /// the rejected count (refused events and refused surfaces) and the dropped
+    /// count (events past the 200th). The program calls it at most once a minute.
     pub fn mark(&mut self, now: u64) -> io::Result<()> {
         let focus: Map<String, Value> = self.focus.iter().map(|(k, v)| (k.clone(), Value::from(*v))).collect();
         let t = now.saturating_sub(self.start);
-        self.line(&json!({ "mark": { "t": t, "focus": focus, "rejected": self.rejected } }))
+        self.line(&json!({ "mark": { "t": t, "focus": focus, "rejected": self.rejected, "dropped": self.dropped } }))
     }
 
     /// Writes one line with a single `write_all`.

@@ -16,7 +16,7 @@
 //! than seven days ago is deleted, so the queue never grows without bound,
 //! even under `Local`, where sessions are never sent.
 
-use crate::mode::Mode;
+use crate::mode::{Crashes, Mode};
 use crate::report::Crash;
 use crate::seal::write_whole;
 use crate::state::State;
@@ -171,7 +171,8 @@ impl Queue {
     /// `visits-app: would send <path>: <bytes>` and kept (`skipped`), and the
     /// transport is never called. Otherwise a `session-*` report is posted only
     /// when `mode.uploads`, and a `crash-*` report only when `mode.reason` is
-    /// `None`, since queuing a crash was the person's consent and `uploads` is
+    /// `None` and `mode.crashes` is not `Never`, since queuing a crash was the
+    /// person's consent, withdrawing it stops what is queued, and `uploads` is
     /// false under the default `Local`; any other report is `skipped` and kept.
     ///
     /// A `2xx` deletes the report and its companion; a `429`, a `5xx`, an
@@ -201,7 +202,7 @@ impl Queue {
             let eligible = if name.starts_with("session-") {
                 mode.uploads
             } else if name.starts_with("crash-") {
-                mode.reason.is_none()
+                mode.reason.is_none() && mode.crashes != Crashes::Never
             } else {
                 false
             };

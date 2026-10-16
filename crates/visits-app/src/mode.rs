@@ -47,15 +47,21 @@ pub struct Mode {
 }
 
 /// The mode for these settings. `env` reads an environment variable and
-/// `app_env_var` names the program's own (`ARKOS_TELEMETRY`); `interactive`
-/// is whether a person is at the terminal or the window.
+/// `app_env_var` names the program's own (`ARKOS_TELEMETRY`).
+///
+/// `interactive` says the program was installed for a person, not run by a
+/// script: a desktop app passes true, and so does its resident helper, which
+/// runs with no window but for the same person. A command a script runs
+/// passes false. Whether to keep everything local is not `interactive`'s to
+/// say: `CI` and `DO_NOT_TRACK` are the environment's say, read here.
 ///
 /// The rules, in order, the first match naming the reason that keeps uploads off:
 /// 1. a source build (`source build`);
 /// 2. `DO_NOT_TRACK` set to anything but empty, `0` or `false` (`DO_NOT_TRACK`),
 ///    which also turns usage `Off` and crashes `Never`;
-/// 3. `app_env_var` equal to `off` (`telemetry off`), the same as rule 2, or to
-///    `log` (`telemetry log`), which keeps the settings and sets `log`;
+/// 3. `app_env_var`, read without regard to case: `off`, `0`, `false` or `no`
+///    (`telemetry off`), the same as rule 2, or `log` (`telemetry log`), which
+///    keeps the settings and sets `log`; any other value is as if it were unset;
 /// 4. `CI` set to anything but empty (`CI`), or not interactive (`not interactive`), where local
 ///    recording continues;
 /// 5. otherwise the settings, `Local` and `Ask` where they say nothing, with
@@ -73,8 +79,8 @@ pub fn mode(
 ) -> Mode {
     let var = |k: &str| env(k).unwrap_or_default();
     let dnt = !matches!(var("DO_NOT_TRACK").as_str(), "" | "0" | "false");
-    let telemetry = var(app_env_var);
-    let off = telemetry == "off";
+    let telemetry = var(app_env_var).to_ascii_lowercase();
+    let off = matches!(telemetry.as_str(), "off" | "0" | "false" | "no");
     let log = telemetry == "log" && !dnt;
 
     let (usage, crashes) = if dnt || off {

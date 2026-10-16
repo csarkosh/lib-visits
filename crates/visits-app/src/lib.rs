@@ -19,27 +19,37 @@
 //! is the same; only the point where a bad value is caught moves.
 //!
 //! `Journal` is what the program appends to while it runs, one line per event
-//! the program's `Allowlist` admits; its line shapes are in the `journal`
-//! module. The allowlist is a TOML file the program ships, one table per event
-//! name, one key per permitted `d` key, and per key either the list of values
-//! it may take, `"int"` or `"bool"`:
+//! the program's `Allowlist` admits, at most 200 a session; its line shapes are
+//! in the `journal` module. The allowlist is a TOML file the program ships, one
+//! table per event name, one key per permitted `d` key, and per key either the
+//! list of values it may take, `"int"` or `"bool"`; and a `[focus]` table
+//! listing the surfaces focus time may be counted against (a file without one
+//! allows no surface):
 //!
 //! ```toml
 //! [events.pane_open]
 //! kind = ["terminal", "viewer", "browser"]
 //! how = ["palette", "key", "click"]
 //! [events.window_open]
+//! [focus]
+//! surfaces = ["terminal", "viewer", "browser"]
 //! ```
 //!
 //! `Allowlist::from_toml` refuses a file that lists what the wire would refuse:
-//! a name or key outside `^[a-z][a-z0-9_]{0,31}$`, more than 6 keys for one
-//! event, or a value outside `^[A-Za-z0-9_.:/-]*$` or longer than 64.
+//! a name, key or surface outside `^[a-z][a-z0-9_]{0,31}$`, more than 6 keys
+//! for one event, more than 16 surfaces, or a value outside
+//! `^[A-Za-z0-9_.:/-]*$` or longer than 64.
+//!
+//! `new_id` makes the `sid` of a session and the `inc` of a crash: 32 hex
+//! characters of randomness, and the only source the program should use.
 //!
 //! `seal` turns the journal of a session that has ended into a session report
 //! in the queue, and `seal_stale` does so at launch for the journals a lost
 //! process left behind. Both change a `State`, the small `state.toml` that
-//! keeps the days the reports count from; the program saves it with
-//! `State::save` after each call, and the crate never writes it on its own.
+//! keeps the days the reports count from, and the crate never writes it on its
+//! own. The program and its resident part may share the file, so the program
+//! loads it right before each `seal`, `drain` or `checked` call and saves it
+//! right after; `State::update` does both around one call.
 //!
 //! `Queue` holds the reports waiting to leave, each with a `.retry` companion
 //! that says when it was queued, how often it failed and when it is next due.
@@ -52,7 +62,9 @@
 //!
 //! `mode` turns the person's settings, the environment and the build's channel
 //! into what may be recorded and sent. Its default is `Local`: recorded on the
-//! person's disk, nothing sent until they say so.
+//! person's disk, nothing sent until they say so. `Off` records nothing, so the
+//! program opens no journal; a crash is sent only while crashes are not
+//! `Never`, so withdrawing consent also stops the crashes already queued.
 //!
 //! `Check::next` says whether the update fetch the program is about to make is
 //! the day's check: `Some` once a UTC day, with `rd` the days since the last
@@ -69,7 +81,8 @@
 //! bytes of any one of them, for a "Show report" button.
 //!
 //! The program's loop, in its own threads and timers, with `dir` its folder
-//! for the crate and `now()` the unix seconds:
+//! for the crate and `now()` the unix seconds. The state is loaded just before
+//! each call that changes it and saved just after, through `State::update`.
 //!
 //! ```no_run
 //! # use std::path::Path;
@@ -79,30 +92,34 @@
 //! # fn now() -> u64 { 0 }
 //! # fn fetch(_: &str) {}
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
-//! # let (dir, sid, http, ua) = (Path::new("/tmp/arkos"), "3f9a1c27b84d5e60", Http, "arkos/0.4.2");
+//! # let (dir, http, ua) = (Path::new("/tmp/arkos"), Http, "arkos/0.4.2");
 //! # let env = Envelope { app: "arkos".into(), ver: "0.4.2".into(), bin: "app".into(), os: Os::Macos, osv: 15, arch: Arch::Arm64, ch: Channel::Release };
-//! # let allow = Allowlist::from_toml("[events.window_open]")?;
-//! # let mode = mode(&Settings::default(), &|k| std::env::var(k).ok(), "ARKOS_TELEMETRY", &env.ch, true);
+//! # let allow = Allowlist::from_toml("[events.window_open]\n[focus]\nsurfaces = [\"editor\"]")?;
+//! # let settings = Settings::default();
 //! # let (collector, updates) = ("https://visits.example.com/a", "https://example.com/arkos/latest.json");
-//! // At launch, seal what a lost process left over a day ago and open this session's journal.
-//! let mut state = State::load(dir);
-//! seal_stale(dir, now(), 86_400, &mut state)?;
-//! state.save(dir)?;
-//! let mut journal = Journal::open(dir, sid, &env, allow, now())?;
-//! // Each minute, the focus totals are flushed.
-//! journal.mark(now())?;
-//! // When the process ends, its journal becomes a report in the queue.
-//! seal(dir, sid, End::Quit, now(), &mut state)?;
-//! state.save(dir)?;
+//! // `interactive` is true when the program was installed for a person, not run
+//! // by a script; a desktop app's resident helper passes true too. `CI` and
+//! // `DO_NOT_TRACK` are the environment's say, and `mode` reads them itself.
+//! let mode = mode(&settings, &|k| std::env::var(k).ok(), "ARKOS_TELEMETRY", &env.ch, true);
+//! // Usage is recorded only when it is not `Off`.
+//! if mode.usage != Usage::Off {
+//!     // At launch, seal what a lost process left over a day ago and open this session's journal.
+//!     State::update(dir, |s| seal_stale(dir, now(), 86_400, s))??;
+//!     let sid = new_id();
+//!     let mut journal = Journal::open(dir, &sid, &env, allow, now())?;
+//!     // Each minute, the focus totals are flushed.
+//!     journal.focus("editor", 60);
+//!     journal.mark(now())?;
+//!     // When the process ends, its journal becomes a report in the queue.
+//!     State::update(dir, |s| seal(dir, &sid, End::Quit, now(), s))??;
+//! }
 //! // Every 15 minutes, the queue posts what the mode lets leave.
-//! Queue::new(dir).drain(&http, collector, ua, &mode, now(), &mut state);
-//! state.save(dir)?;
+//! State::update(dir, |s| Queue::new(dir).drain(&http, collector, ua, &mode, now(), s))?;
 //! // Before an update fetch, the day's first goes through the collector.
-//! match Check::next(&env, &state, now()) {
+//! match Check::next(&env, &State::load(dir), now()) {
 //!     Some(check) => {
 //!         fetch(&format!("{collector}/check?{}", check.to_query()?));
-//!         state.checked(now());
-//!         state.save(dir)?;
+//!         State::update(dir, |s| s.checked(now()))?;
 //!     }
 //!     None => fetch(updates),
 //! }
@@ -111,6 +128,7 @@
 
 pub mod allowlist;
 mod check;
+mod id;
 pub mod journal;
 pub mod mode;
 pub mod queue;
@@ -120,6 +138,7 @@ pub mod state;
 pub mod view;
 
 pub use allowlist::{Allowlist, Rejected};
+pub use id::new_id;
 pub use journal::Journal;
 pub use mode::{mode, Crashes, Mode, Settings, Usage};
 pub use queue::{Outcome, Queue, Transport};

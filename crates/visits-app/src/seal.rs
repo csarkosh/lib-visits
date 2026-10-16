@@ -9,7 +9,8 @@
 //! only (a last line without its `\n` was cut by a crash), each line that does
 //! not parse as JSON skipped wherever it is, the first start line giving the
 //! session's start and envelope, every event line an event in order, and the
-//! last mark line the focus totals and the rejected count. A journal with no
+//! last mark line the focus totals and the rejected and dropped counts (a mark
+//! without `dropped`, from an older build, dropped none). A journal with no
 //! start line, or whose envelope cannot be read, cannot be reported and is
 //! deleted.
 //!
@@ -45,6 +46,8 @@ struct Recorded {
     ev: Vec<Event>,
     focus: BTreeMap<String, u64>,
     rejected: u64,
+    /// The events the journal admitted past the 200th and did not write.
+    dropped: u64,
     /// The greatest `t` of any event or mark: the last time the journal saw.
     last_t: u64,
 }
@@ -56,6 +59,7 @@ fn read(bytes: &[u8]) -> Option<Recorded> {
     let mut ev = Vec::new();
     let mut focus = BTreeMap::new();
     let mut rejected = 0;
+    let mut dropped = 0;
     let mut last_t = 0;
     for line in complete.split(|&b| b == b'\n') {
         let Ok(v) = serde_json::from_slice::<Value>(line) else { continue };
@@ -68,22 +72,28 @@ fn read(bytes: &[u8]) -> Option<Recorded> {
         } else if let Some(e) = v.get("ev").and_then(Event::from_value) {
             last_t = last_t.max(e.t);
             ev.push(e);
-        } else if let Some((t, f, r)) = v.get("mark").and_then(mark) {
+        } else if let Some((t, f, r, d)) = v.get("mark").and_then(mark) {
             last_t = last_t.max(t);
             focus = f;
             rejected = r;
+            dropped = d;
         }
     }
     let (start, env) = head?;
-    Some(Recorded { start, env, ev, focus, rejected, last_t })
+    Some(Recorded { start, env, ev, focus, rejected, dropped, last_t })
 }
 
-/// Reads a mark line's `t`, focus totals and rejected count.
-fn mark(v: &Value) -> Option<(u64, BTreeMap<String, u64>, u64)> {
+/// Reads a mark line's `t`, focus totals, rejected count and dropped count
+/// (`0` when the line has none).
+fn mark(v: &Value) -> Option<(u64, BTreeMap<String, u64>, u64, u64)> {
     let t = v.get("t")?.as_u64()?;
     let focus = v.get("focus")?.as_object()?.iter().map(|(k, secs)| Some((k.clone(), secs.as_u64()?))).collect::<Option<_>>()?;
     let rejected = v.get("rejected")?.as_u64()?;
-    Some((t, focus, rejected))
+    let dropped = match v.get("dropped") {
+        None => 0,
+        Some(d) => d.as_u64()?,
+    };
+    Some((t, focus, rejected, dropped))
 }
 
 /// Writes a file whole through a temporary file and a rename. The queue
@@ -145,7 +155,7 @@ pub fn seal(dir: &Path, sid: &str, end: End, now: u64, state: &mut State) -> io:
         rd,
         focus: j.focus,
         ev: Vec::new(),
-        ev_dropped: 0,
+        ev_dropped: j.dropped,
         ev_rejected: j.rejected,
     };
     for e in j.ev {

@@ -154,8 +154,34 @@ fn telemetry_log_wins_over_ci() {
 }
 
 #[test]
+fn the_app_variable_turns_off_without_regard_to_case() {
+    for off in ["off", "OFF", "Off", "0", "false", "FALSE", "no", "NO"] {
+        let m = release(&on(), &[(VAR, off)]);
+        assert_eq!(
+            m,
+            Mode { usage: Usage::Off, crashes: Crashes::Never, uploads: false, invite: false, log: false, reason: Some("telemetry off") },
+            "{off}"
+        );
+    }
+}
+
+#[test]
+fn the_app_variable_logs_without_regard_to_case() {
+    for log in ["log", "LOG", "Log"] {
+        let m = release(&on(), &[(VAR, log)]);
+        assert_eq!(
+            m,
+            Mode { usage: Usage::On, crashes: Crashes::Always, uploads: false, invite: false, log: true, reason: Some("telemetry log") },
+            "{log}"
+        );
+    }
+}
+
+#[test]
 fn another_app_variable_value_changes_nothing() {
-    assert_eq!(release(&on(), &[(VAR, "on")]), release(&on(), &[]));
+    for other in ["on", "ON", "1", "true", "yes", "", "offf", " off", "logs"] {
+        assert_eq!(release(&on(), &[(VAR, other)]), release(&on(), &[]), "{other:?}");
+    }
     assert_eq!(release(&on(), &[("OTHER_TELEMETRY", "off")]), release(&on(), &[]));
 }
 

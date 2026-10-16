@@ -379,6 +379,24 @@ fn the_default_mode_sends_the_crash_and_skips_the_session() {
 }
 
 #[test]
+fn crashes_never_skips_a_queued_crash() {
+    let dir = scratch("never");
+    let crash = put(&dir, CRASH, fresh(NOW));
+    for usage in [Usage::Local, Usage::On] {
+        let never = mode_for(Settings { usage: Some(usage), crashes: Some(Crashes::Never) }, &[]);
+        assert_eq!((never.reason, never.crashes), (None, Crashes::Never));
+        let mut state = State::default();
+        let (outcome, fake) = drain(&dir, &[Ok(204)], &never, NOW, &mut state);
+        assert_eq!(outcome, Outcome { skipped: 1, ..Outcome::default() }, "{usage:?}");
+        assert_eq!(fake.calls(), 0);
+        assert!(crash.exists());
+        assert_eq!(retry_of(&crash), fresh(NOW).unwrap());
+        assert_eq!(state, State::default());
+    }
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
 fn usage_on_sends_both_kinds() {
     let dir = scratch("on");
     put(&dir, SESSION, fresh(NOW));

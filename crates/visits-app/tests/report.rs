@@ -225,6 +225,20 @@ fn a_version_with_build_metadata_survives_the_query() {
 }
 
 #[test]
+fn new_id_is_32_lowercase_hex_and_new_each_call() {
+    let ids: Vec<String> = (0..64).map(|_| visits_app::new_id()).collect();
+    for id in &ids {
+        assert_eq!(id.len(), 32, "{id}");
+        assert!(id.bytes().all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c)), "{id}");
+    }
+    let mut unique = ids.clone();
+    unique.sort();
+    unique.dedup();
+    assert_eq!(unique.len(), ids.len(), "no two calls give the same id");
+    assert_ne!(ids[0], ids[1]);
+}
+
+#[test]
 fn push_keeps_the_first_200_and_counts_the_rest() {
     let mut s = session();
     s.ev.clear();

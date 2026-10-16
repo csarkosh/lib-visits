@@ -3,8 +3,10 @@
 //! since the epoch (`unix seconds / 86_400`).
 //!
 //! The crate never saves it on its own: `seal`, `drain` and `checked` change a
-//! `State` in memory and the program saves it with `State::save` once after
-//! each call, so one place owns the file.
+//! `State` in memory and the program saves it. Since the program and its
+//! resident part may share the file, the program loads it right before each of
+//! those calls and saves it right after, which `State::update` does in one
+//! step, so neither undoes what the other saved in between.
 
 use std::fs;
 use std::io;
@@ -62,8 +64,31 @@ impl State {
             text.push_str(&format!("{key} = {}\n", n.min(i64::MAX as u64)));
         }
         fs::create_dir_all(dir)?;
-        let tmp = dir.join(format!("{FILE}.tmp"));
+        // The process id keeps two processes saving at once from sharing a temp file.
+        let tmp = dir.join(format!("{FILE}.{}.tmp", std::process::id()));
         fs::write(&tmp, text)?;
         fs::rename(&tmp, dir.join(FILE))
+    }
+
+    /// Loads `<dir>/state.toml`, hands it to `f`, saves it and returns what `f`
+    /// returned: the way to wrap a `seal`, `drain` or `checked` call, so the
+    /// state is read just before and written just after. The state is saved
+    /// whatever `f` returned, since a call that fails partway may already have
+    /// changed it.
+    ///
+    /// ```no_run
+    /// # use std::path::Path;
+    /// # use visits_app::*;
+    /// # fn main() -> std::io::Result<()> {
+    /// # let (dir, sid, now) = (Path::new("/tmp/arkos"), "3f9a1c27b84d5e60", 0);
+    /// State::update(dir, |s| seal(dir, sid, End::Quit, now, s))??;
+    /// State::update(dir, |s| s.checked(now))?;
+    /// # Ok(()) }
+    /// ```
+    pub fn update<R>(dir: &Path, f: impl FnOnce(&mut State) -> R) -> io::Result<R> {
+        let mut state = State::load(dir);
+        let result = f(&mut state);
+        state.save(dir)?;
+        Ok(result)
     }
 }

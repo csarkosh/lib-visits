@@ -45,7 +45,8 @@ impl State {
     /// Records that the day's check was made at `now`. The program calls it
     /// once the request has been made, whatever it answered (a redirect, a
     /// refusal or an error), so a failing collector costs one check a day and
-    /// no more; it then saves the state with `State::save`.
+    /// no more. The program calls it through `State::update`, so the state is
+    /// loaded just before and saved just after.
     pub fn checked(&mut self, now: u64) {
         self.last_check_day = Some(day(now));
     }

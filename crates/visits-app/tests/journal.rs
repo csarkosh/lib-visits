@@ -12,6 +12,8 @@ how = ["palette", "key", "click"]
 [events.resize]
 cols = "int"
 full = "bool"
+[focus]
+surfaces = ["terminal", "viewer"]
 "#;
 
 const SID: &str = "3f9a1c27b84d5e60";
@@ -131,14 +133,14 @@ fn the_journal_has_a_start_line_events_and_marks() {
         json!({ "ev": { "n": "window_open", "t": 0 } }),
         json!({ "ev": { "n": "pane_open", "t": 12, "d": { "kind": "viewer", "how": "click" } } }),
         json!({ "ev": { "n": "resize", "t": 20, "d": { "cols": -3 } } }),
-        json!({ "mark": { "t": 60, "focus": { "terminal": 42, "viewer": 5 }, "rejected": 2 } }),
+        json!({ "mark": { "t": 60, "focus": { "terminal": 42, "viewer": 5 }, "rejected": 2, "dropped": 0 } }),
     ];
     assert_eq!(lines(&dir), first);
 
     j.focus("viewer", 10);
     j.mark(1120).unwrap();
     let mut second = first.clone();
-    second.push(json!({ "mark": { "t": 120, "focus": { "terminal": 42, "viewer": 15 }, "rejected": 2 } }));
+    second.push(json!({ "mark": { "t": 120, "focus": { "terminal": 42, "viewer": 15 }, "rejected": 2, "dropped": 0 } }));
     assert_eq!(lines(&dir), second, "a second mark appends a line with the running totals");
     std::fs::remove_dir_all(&dir).unwrap();
 }
@@ -148,7 +150,7 @@ fn a_mark_with_nothing_recorded_has_empty_focus() {
     let dir = scratch("empty");
     let mut j = Journal::open(&dir, SID, &envelope(), Allowlist::from_toml(ALLOW).unwrap(), 500).unwrap();
     j.mark(530).unwrap();
-    assert_eq!(lines(&dir)[1], json!({ "mark": { "t": 30, "focus": {}, "rejected": 0 } }));
+    assert_eq!(lines(&dir)[1], json!({ "mark": { "t": 30, "focus": {}, "rejected": 0, "dropped": 0 } }));
     std::fs::remove_dir_all(&dir).unwrap();
 }
 
@@ -173,20 +175,67 @@ fn a_named_channel_is_spelled_as_its_name() {
 }
 
 #[test]
-fn a_surface_the_wire_would_refuse_is_left_out_of_focus_and_counted() {
+fn a_surface_the_allowlist_does_not_list_is_left_out_of_focus_and_counted() {
     let dir = scratch("surfaces");
-    let mut j = Journal::open(&dir, SID, &envelope(), Allowlist::from_toml(ALLOW).unwrap(), 0).unwrap();
+    let sixteen = (0..16).map(|i| format!("\"s{i:02}\"")).collect::<Vec<_>>().join(", ");
+    let allow = Allowlist::from_toml(&format!("[focus]\nsurfaces = [{sixteen}]\n")).unwrap();
+    let mut j = Journal::open(&dir, SID, &envelope(), allow, 0).unwrap();
     j.focus("Bad Surface", 9);
     for i in 0..17 {
         j.focus(&format!("s{i:02}"), 1);
     }
     j.focus("s00", 1);
+    j.focus("editor", 5);
     j.mark(60).unwrap();
     let focus = lines(&dir)[1]["mark"]["focus"].as_object().unwrap().clone();
     assert_eq!(focus.len(), 16);
     assert_eq!(focus["s00"], json!(2));
-    assert!(!focus.contains_key("s16") && !focus.contains_key("Bad Surface"));
-    assert_eq!(lines(&dir)[1]["mark"]["rejected"], json!(2), "the bad name and the seventeenth surface");
+    assert!(!focus.contains_key("s16") && !focus.contains_key("Bad Surface") && !focus.contains_key("editor"));
+    assert_eq!(lines(&dir)[1]["mark"]["rejected"], json!(3), "the bad name, the seventeenth surface and the unlisted one");
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn an_allowlist_without_a_focus_table_allows_no_surface() {
+    let dir = scratch("no-focus");
+    let mut j = Journal::open(&dir, SID, &envelope(), Allowlist::from_toml("[events.window_open]\n").unwrap(), 0).unwrap();
+    j.focus("terminal", 30);
+    j.mark(60).unwrap();
+    assert_eq!(lines(&dir)[1], json!({ "mark": { "t": 60, "focus": {}, "rejected": 1, "dropped": 0 } }));
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn the_focus_table_is_checked_as_the_wire_would() {
+    assert!(Allowlist::from_toml("[focus]\nsurfaces = []\n").is_ok());
+    assert!(Allowlist::from_toml("[focus]\nsurfaces = [\"terminal\", \"viewer\"]\n").is_ok());
+    assert!(Allowlist::from_toml("[focus]\n").is_ok(), "no surfaces key lists none");
+    assert!(Allowlist::from_toml("[focus]\nsurfaces = [\"Terminal\"]\n").is_err(), "an upper-case surface");
+    assert!(Allowlist::from_toml("[focus]\nsurfaces = [\"a-b\"]\n").is_err(), "a dash in a surface");
+    assert!(Allowlist::from_toml(&format!("[focus]\nsurfaces = [\"{}\"]\n", "a".repeat(33))).is_err(), "a surface over 32");
+    assert!(Allowlist::from_toml("[focus]\nsurfaces = [1]\n").is_err(), "a surface that is not a string");
+    assert!(Allowlist::from_toml("[focus]\nsurfaces = \"terminal\"\n").is_err(), "surfaces that are not a list");
+    assert!(Allowlist::from_toml("[focus]\nother = [\"a\"]\n").is_err(), "a key other than surfaces");
+    assert!(Allowlist::from_toml("focus = 1\n").is_err(), "focus that is not a table");
+    let list = |n: usize| (0..n).map(|i| format!("\"s{i:02}\"")).collect::<Vec<_>>().join(", ");
+    assert!(Allowlist::from_toml(&format!("[focus]\nsurfaces = [{}]\n", list(16))).is_ok(), "sixteen surfaces");
+    assert!(Allowlist::from_toml(&format!("[focus]\nsurfaces = [{}]\n", list(17))).is_err(), "a seventeenth surface");
+}
+
+#[test]
+fn past_200_accepted_events_the_journal_writes_no_more_and_counts_them() {
+    let dir = scratch("cap");
+    let mut j = Journal::open(&dir, SID, &envelope(), Allowlist::from_toml(ALLOW).unwrap(), 0).unwrap();
+    // A refused event does not take one of the 200 places.
+    j.event(event("pane_close", &[]), 0);
+    for t in 0..205 {
+        j.event(event("window_open", &[]), t);
+    }
+    j.mark(300).unwrap();
+    let all = lines(&dir);
+    assert_eq!(all.len(), 1 + 200 + 1, "the start line, 200 events and the mark");
+    assert_eq!(all[200], json!({ "ev": { "n": "window_open", "t": 199 } }));
+    assert_eq!(all[201], json!({ "mark": { "t": 300, "focus": {}, "rejected": 1, "dropped": 5 } }));
     std::fs::remove_dir_all(&dir).unwrap();
 }
 
