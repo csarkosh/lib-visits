@@ -216,7 +216,7 @@ pub struct Queue { dir: PathBuf }
 #[derive(Default, Debug, PartialEq)] pub struct Outcome { pub sent: usize, pub failed: usize, pub rejected: usize, pub dropped: usize, pub skipped: usize }
 impl Queue {
     pub fn new(dir: &Path) -> Queue;
-    pub fn enqueue_crash(&self, crash: &Crash) -> io::Result<PathBuf>;     // inc must be 16 to 32 hex; queue/crash-<inc>.json
+    pub fn enqueue_crash(&self, crash: &Crash, now: u64) -> io::Result<PathBuf>;     // inc must be 16 to 32 hex; queue/crash-<inc>.json and its companion with first: now
     pub fn due(&self, now: u64) -> Vec<PathBuf>;                           // by the .retry companion {"first": secs, "attempts": n, "next": secs}; a file with none is due now
     pub fn drain(&self, t: &dyn Transport, url: &str, user_agent: &str, mode: &Mode, now: u64, state: &mut State) -> Outcome;
 }
