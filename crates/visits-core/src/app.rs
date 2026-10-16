@@ -52,6 +52,8 @@ enum Kind {
     Enum(&'static [&'static str]),
     Hex { min: usize, max: usize },
     Int { min: i64 },
+    /// Days as a whole number of weeks: an integer `>= 0` and a multiple of 7.
+    Week,
     Focus,
     Events,
     Data,
@@ -103,7 +105,7 @@ const SESSION: &[Field] = &[
     must("sid", Kind::Hex { min: 16, max: 32 }),
     must("len", COUNT),
     must("end", Kind::Enum(&["quit", "lost", "unknown"])),
-    must("iw", COUNT),
+    must("iw", Kind::Week),
     must("rd", DAYS),
     must("focus", Kind::Focus),
     must("ev", Kind::Events),
@@ -221,7 +223,7 @@ fn tuple<'a>(v: &'a Value, len: usize, path: &str) -> Result<&'a [Value], Invali
     }
 }
 
-fn check(kind: Kind, v: &Value, path: &str) -> Result<(), Invalid> {
+fn check_value(kind: Kind, v: &Value, path: &str) -> Result<(), Invalid> {
     match kind {
         Kind::Two => if v.as_u64() == Some(2) { Ok(()) } else { Err(Invalid::Version) },
         Kind::Str { cap, pat } => {
@@ -232,6 +234,11 @@ fn check(kind: Kind, v: &Value, path: &str) -> Result<(), Invalid> {
         Kind::Enum(set) => if set.contains(&string(v, path)?) { Ok(()) } else { Err(Invalid::Pattern(path.into())) },
         Kind::Hex { min, max } => if hex(string(v, path)?, min, max) { Ok(()) } else { Err(Invalid::Pattern(path.into())) },
         Kind::Int { min } => int(v, min, path),
+        Kind::Week => {
+            int(v, 0, path)?;
+            // `int` with a minimum of 0 leaves only whole numbers that fit a `u64`.
+            if v.as_u64().is_some_and(|w| w % 7 == 0) { Ok(()) } else { Err(Invalid::Pattern(path.into())) }
+        }
         Kind::Focus => {
             for (k, secs) in object(v, MAX_FOCUS, path)? {
                 int(secs, 0, &name_key(path, k)?)?;
@@ -248,8 +255,10 @@ fn check(kind: Kind, v: &Value, path: &str) -> Result<(), Invalid> {
             for (k, value) in object(v, MAX_DATA, path)? {
                 let child = name_key(path, k)?;
                 match value {
-                    Value::String(_) => check(Kind::Str { cap: 64, pat: Pat::Value }, value, &child)?,
-                    Value::Number(n) if n.is_i64() || n.is_u64() => {}
+                    Value::String(_) => check_value(Kind::Str { cap: 64, pat: Pat::Value }, value, &child)?,
+                    // A payload integer has no minimum (a delta can be negative) but must fit an `i64`.
+                    Value::Number(n) if n.is_i64() => {}
+                    Value::Number(n) if n.is_u64() => return Err(Invalid::Pattern(child)),
                     Value::Bool(_) => {}
                     _ => return Err(Invalid::Type(child)),
                 }
@@ -267,8 +276,8 @@ fn check(kind: Kind, v: &Value, path: &str) -> Result<(), Invalid> {
         Kind::Images => {
             for triple in array(v, MAX_IMAGES, path)? {
                 let t = tuple(triple, 3, path)?;
-                check(Kind::Str { cap: 64, pat: Pat::ImageName }, &t[0], "images.name")?;
-                check(Kind::Hex { min: 32, max: 32 }, &t[1], "images.uuid")?;
+                check_value(Kind::Str { cap: 64, pat: Pat::ImageName }, &t[0], "images.name")?;
+                check_value(Kind::Hex { min: 32, max: 32 }, &t[1], "images.uuid")?;
                 int(&t[2], 0, "images.size")?;
             }
             Ok(())
@@ -292,7 +301,7 @@ fn walk(obj: &Map<String, Value>, tables: &[&[Field]], prefix: &str) -> Result<M
             None if f.required => return Err(Invalid::Missing(f.path)),
             None => {}
             Some(v) => {
-                check(f.kind, v, f.path)?;
+                check_value(f.kind, v, f.path)?;
                 out.insert(f.key.to_string(), v.clone());
             }
         }
@@ -306,7 +315,7 @@ fn walk(obj: &Map<String, Value>, tables: &[&[Field]], prefix: &str) -> Result<M
 fn report(obj: &Map<String, Value>, is_check: bool) -> Result<AppReport, Invalid> {
     match obj.get("v") {
         None => return Err(Invalid::Missing("v")),
-        Some(v) => check(Kind::Two, v, "v")?,
+        Some(v) => check_value(Kind::Two, v, "v")?,
     }
     let k = match obj.get("k") {
         None => return Err(Invalid::Missing("k")),
@@ -334,18 +343,32 @@ pub fn validate_report(body: &[u8]) -> Result<AppReport, Invalid> {
     }
 }
 
-/// A GET query: the envelope and `rd`, with `k` equal to `check`. A key given
-/// twice is a bad value, so the last one never silently wins. An integer key
-/// whose text does not parse stays a string, and the walk calls it a bad type.
+/// The text of an integer key, read as JSON would read the same number: only
+/// `-?[0-9]+`, as an `i64` or else a `u64`. Anything else stays a string, and
+/// the walk calls it a bad type.
+fn query_int(raw: String) -> Value {
+    let digits = raw.strip_prefix('-').unwrap_or(&raw);
+    if digits.is_empty() || !digits.bytes().all(|c| c.is_ascii_digit()) { return Value::String(raw); }
+    match (raw.parse::<i64>(), raw.parse::<u64>()) {
+        (Ok(i), _) => Value::from(i),
+        (_, Ok(u)) => Value::from(u),
+        _ => Value::String(raw),
+    }
+}
+
+/// A GET query: the envelope and `rd`, with `k` equal to `check`. A known key
+/// given twice is a bad value, so the last one never silently wins; an unknown
+/// key, given once or twice, is left for the walk to name.
 pub fn validate_check(query: &str) -> Result<AppReport, Invalid> {
     let pairs: Vec<(String, String)> = serde_urlencoded::from_str(query).map_err(|_| Invalid::Json)?;
     let mut obj = Map::new();
     for (key, raw) in pairs {
-        let value = match known(&[ENVELOPE, CHECK], &key) {
-            Some(Kind::Two | Kind::Int { .. }) => raw.parse::<i64>().map(Value::from).unwrap_or(Value::String(raw)),
+        let kind = known(&[ENVELOPE, CHECK], &key);
+        if kind.is_some() && obj.contains_key(&key) { return Err(Invalid::Pattern(key)); }
+        let value = match kind {
+            Some(Kind::Two | Kind::Int { .. }) => query_int(raw),
             _ => Value::String(raw),
         };
-        if obj.contains_key(&key) { return Err(Invalid::Pattern(key)); }
         obj.insert(key, value);
     }
     report(&obj, true)

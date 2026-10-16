@@ -65,7 +65,7 @@ fn an_array_body_is_malformed() {
 
 #[test]
 fn the_new_refusals_read_as_the_plan_spells_them() {
-    assert_eq!(Invalid::Unknown("ev.d.x".into()).to_string(), "unknown key: ev.d.x");
+    assert_eq!(Invalid::Unknown("ev.x".into()).to_string(), "unknown key: ev.x");
     assert_eq!(Invalid::Pattern("images.uuid".into()).to_string(), "bad value: images.uuid");
     assert_eq!(Invalid::Channel.to_string(), "source channel");
     assert_eq!(Invalid::Kind.to_string(), "wrong kind for this route");
@@ -156,4 +156,65 @@ fn decoration_adds_s_and_time_and_nothing_else() {
     expected["s"] = json!({ "sv": 2, "at": "1970-01-01T00:00:00Z" });
     expected["time"] = json!("1970-01-01T00:00:00.000Z");
     assert_eq!(line, expected);
+}
+
+#[test]
+fn iw_is_a_whole_number_of_weeks() {
+    assert!(session_with("iw", json!(0)).is_ok());
+    assert!(session_with("iw", json!(20622)).is_ok());
+    assert_eq!(session_with("iw", json!(20630)), Err(Invalid::Pattern("iw".into())));
+    assert_eq!(session_with("iw", json!(-7)), Err(Invalid::Pattern("iw".into())));
+    assert_eq!(session_with("iw", json!("14")), Err(Invalid::Type("iw".into())));
+}
+
+#[test]
+fn a_d_integer_is_any_i64() {
+    for n in [json!(-5), json!(i64::MIN), json!(i64::MAX)] {
+        assert!(session_with("ev", json!([{ "n": "a", "t": 0, "d": { "delta": n } }])).is_ok(), "{n}");
+    }
+    let above = json!([{ "n": "a", "t": 0, "d": { "delta": u64::MAX } }]);
+    assert_eq!(session_with("ev", above), Err(Invalid::Pattern("ev.d.delta".into())));
+}
+
+#[test]
+fn keys_and_strings_outside_their_pattern_are_bad_values() {
+    assert_eq!(session_with("ev", json!([{ "n": "a", "t": 0, "d": { "X": 1 } }])), Err(Invalid::Pattern("ev.d.X".into())));
+    assert_eq!(session_with("focus", json!({ "Bad": 1 })), Err(Invalid::Pattern("focus.Bad".into())));
+    assert_eq!(session_with("ev", json!([{ "n": "café", "t": 0 }])), Err(Invalid::Pattern("ev.n".into())));
+    assert_eq!(session_with("ev", json!([{ "n": "a", "t": 0, "d": { "v": "café" } }])), Err(Invalid::Pattern("ev.d.v".into())));
+    // Thirty-two characters but thirty-three bytes: refused by the pattern, whatever the count.
+    let wide = format!("{}é", "a".repeat(31));
+    assert_eq!(wide.chars().count(), 32);
+    assert_eq!(session_with("ev", json!([{ "n": wide, "t": 0 }])), Err(Invalid::Pattern("ev.n".into())));
+    assert!(session_with("ev", json!([{ "n": "a".repeat(32), "t": 0 }])).is_ok());
+    assert_eq!(session_with("ev", json!([{ "n": "a".repeat(33), "t": 0 }])), Err(Invalid::Pattern("ev.n".into())));
+}
+
+#[test]
+fn counts_types_and_integer_range() {
+    let image = json!(["a", "0123456789abcdef0123456789abcdef", 1]);
+    assert!(crash_with("images", Value::Array(vec![image.clone(); 32])).is_ok());
+    assert_eq!(crash_with("images", Value::Array(vec![image; 33])), Err(Invalid::Keys("images".into())));
+    assert_eq!(session_with("ev", json!(["launch"])), Err(Invalid::Type("ev".into())));
+    assert_eq!(session_with("osv", json!(1.5)), Err(Invalid::Type("osv".into())));
+    assert!(session_with("osv", json!(u64::MAX)).is_ok());
+}
+
+#[test]
+fn query_integers_read_as_a_body_would() {
+    let base = "v=2&app=arkos&ver=0.5.0&bin=daemon&os=macos&arch=arm64&ch=release&k=check";
+    assert_eq!(validate_check(&format!("{base}&osv=15&rd")), Err(Invalid::Type("rd".into())));
+    assert_eq!(validate_check(&format!("{base}&osv=15&rd=")), Err(Invalid::Type("rd".into())));
+    assert_eq!(validate_check(&format!("{base}&osv=15&rd=%2B5")), Err(Invalid::Type("rd".into())));
+    assert_eq!(validate_check(&format!("{base}&osv=15&rd=-")), Err(Invalid::Type("rd".into())));
+    assert_eq!(validate_check(&format!("{base}&osv=1.5&rd=0")), Err(Invalid::Type("osv".into())));
+    let r = validate_check(&format!("{base}&osv={}&rd=0", u64::MAX)).unwrap();
+    assert_eq!(r.fields["osv"], json!(u64::MAX));
+    assert_eq!(validate_check(&format!("{base}&osv=99999999999999999999&rd=0")), Err(Invalid::Type("osv".into())));
+}
+
+#[test]
+fn a_repeated_unknown_query_key_is_named_as_unknown() {
+    let q = fixture("check")["query"].as_str().unwrap().to_string();
+    assert_eq!(validate_check(&format!("{q}&zz=1&zz=2")), Err(Invalid::Unknown("zz".into())));
 }

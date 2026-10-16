@@ -169,7 +169,7 @@ An event:
 |---|---|---|
 | `n` | string, required | `^[a-z][a-z0-9_]{0,31}$` |
 | `t` | integer, required | `>= 0`, seconds since launch |
-| `d` | object, optional | at most 6 keys, `^[a-z][a-z0-9_]{0,31}$`; values are strings of at most 64 characters matching `^[A-Za-z0-9_.:/-]*$`, integers, or booleans |
+| `d` | object, optional | at most 6 keys, `^[a-z][a-z0-9_]{0,31}$`; values are strings of at most 64 characters matching `^[A-Za-z0-9_.:/-]*$`, integers (any i64), or booleans |
 
 More than 200 events, more than 6 `d` keys or more than 16 `focus` keys is `400`, not `413`.
 
