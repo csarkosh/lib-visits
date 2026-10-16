@@ -1,5 +1,8 @@
-//! The router: the beacon route, the health route, and the checks in order:
-//! method, origin, address and limiter, body, then decorate and sink.
+//! The router: the beacon route, the report and check routes for installed
+//! programs, and the health route. A beacon is checked in order: method, origin,
+//! address and limiter, body, then decorate and sink. A report or a check is
+//! checked: method, address and limiter, agent, body, app and channel, then
+//! decorate and sink; nothing about its request is written or printed.
 use crate::ignore::IpNet;
 use crate::limiter::Limiter;
 use crate::sink::Sink;
@@ -9,7 +12,7 @@ use axum::http::{header, HeaderMap, HeaderValue, Method, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{any, get};
 use axum::Router;
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::net::{IpAddr, SocketAddr};
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -17,9 +20,14 @@ use std::sync::atomic::{AtomicBool, Ordering};
 static PROXY_WARNED: AtomicBool = AtomicBool::new(false);
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
-use visits_core::{decorate, validate_json, validate_query, Invalid, RequestFacts};
+use visits_core::{
+    app_of, channel_of, decorate, decorate_report, validate_check, validate_json, validate_query, validate_report, AppReport, Invalid,
+    RequestFacts,
+};
 
 pub const MAX_BODY: usize = 16 * 1024;
+/// The report route's own cap (section 6.1), set on its route inside the router's.
+pub const MAX_REPORT: usize = 64 * 1024;
 
 #[cfg(feature = "geoip")]
 pub type GeoIp = maxminddb::Reader<Vec<u8>>;
@@ -37,14 +45,26 @@ pub struct AppState {
     pub geoip: Option<GeoIp>,
     /// Beacons from these ranges are answered 204 and never written.
     pub ignore: Vec<IpNet>,
+    /// The programs allowed to report, each with the page its check redirects
+    /// to, if any. Empty: no report route.
+    pub apps: BTreeMap<String, Option<String>>,
+    /// The report route; the check route is this followed by `/check`.
+    pub app_path: String,
 }
 
+/// The beacon route is mounted when there is an origin to allow, the report
+/// and check routes when there is an app to allow.
 pub fn router(state: Arc<AppState>) -> Router {
-    let path = state.path.clone();
-    Router::new()
-        .route("/healthcheck", get(|| async { ([(header::CONTENT_TYPE, "text/plain")], "ok") }))
-        .route(&path, any(beacon))
-        .layer(DefaultBodyLimit::max(MAX_BODY))
+    let mut r = Router::new().route("/healthcheck", get(|| async { ([(header::CONTENT_TYPE, "text/plain")], "ok") }));
+    if !state.origins.is_empty() {
+        r = r.route(&state.path, any(beacon));
+    }
+    if !state.apps.is_empty() {
+        r = r
+            .route(&state.app_path, any(report).layer(DefaultBodyLimit::max(MAX_REPORT)))
+            .route(&format!("{}/check", state.app_path), any(check));
+    }
+    r.layer(DefaultBodyLimit::max(MAX_BODY))
         .with_state(state)
         .layer(axum::middleware::map_response(no_store))
 }
@@ -102,16 +122,10 @@ async fn beacon(
     }
     let Some(origin) = origin_of(&headers, &state.origins) else { return refuse(StatusCode::FORBIDDEN, "origin not allowed") };
     let h = |name: &str| headers.get(name).and_then(|v| v.to_str().ok());
-    let ip = client_ip(h("x-forwarded-for"), peer.ip(), state.trusted_proxies);
-    if ip.is_none() && state.trusted_proxies > 0 && !PROXY_WARNED.swap(true, Ordering::Relaxed) {
-        eprintln!("visits: X-Forwarded-For has fewer entries than --trusted-proxies; every visitor is sharing one bucket and no visit is computed. Check the proxy depth with --log-ip.");
-    }
+    let ip = resolve_ip(&state, &headers, peer);
     if state.log_ip { eprintln!("visits: request from {}", ip.map(|i| i.to_string()).unwrap_or_else(|| "unknown".into())); }
-    if ip.is_some_and(|i| state.ignore.iter().any(|n| n.contains(i))) { return taken(&origin); }
-    let key = ip.map(|i| i.to_string()).unwrap_or_else(|| "unknown".into());
-    if !state.limiter.lock().map(|mut l| l.allow(&key)).unwrap_or(true) {
-        return (StatusCode::TOO_MANY_REQUESTS, [(header::CACHE_CONTROL, "no-store"), (header::RETRY_AFTER, "1")]).into_response();
-    }
+    if ignored(&state, ip) { return taken(&origin); }
+    if let Some(res) = limited(&state, ip) { return res; }
     let parsed = if method == Method::GET { validate_query(query.as_deref().unwrap_or("")) } else { validate_json(&body) };
     let events = match parsed {
         Ok(e) => e,
@@ -136,6 +150,108 @@ async fn beacon(
     let decorated: Vec<_> = events.into_iter().map(|e| decorate(e, &facts)).collect();
     if let Err(err) = state.sink.write(&decorated) { eprintln!("visits: sink failed: {err}"); }
     taken(&origin)
+}
+
+/// The client address under `--trusted-proxies`, warning once per process
+/// when `X-Forwarded-For` is too short to answer.
+fn resolve_ip(state: &AppState, headers: &HeaderMap, peer: SocketAddr) -> Option<IpAddr> {
+    let forwarded_for = headers.get("x-forwarded-for").and_then(|v| v.to_str().ok());
+    let ip = client_ip(forwarded_for, peer.ip(), state.trusted_proxies);
+    if ip.is_none() && state.trusted_proxies > 0 && !PROXY_WARNED.swap(true, Ordering::Relaxed) {
+        eprintln!("visits: X-Forwarded-For has fewer entries than --trusted-proxies; every visitor is sharing one bucket and no visit is computed. Check the proxy depth with --log-ip.");
+    }
+    ip
+}
+
+fn ignored(state: &AppState, ip: Option<IpAddr>) -> bool {
+    ip.is_some_and(|i| state.ignore.iter().any(|n| n.contains(i)))
+}
+
+/// The `429` when the address has spent its bucket. Every route draws on the
+/// same bucket, keyed by address; unknown addresses share one.
+fn limited(state: &AppState, ip: Option<IpAddr>) -> Option<Response> {
+    let key = ip.map(|i| i.to_string()).unwrap_or_else(|| "unknown".into());
+    if state.limiter.lock().map(|mut l| l.allow(&key)).unwrap_or(true) { return None; }
+    Some((StatusCode::TOO_MANY_REQUESTS, [(header::CACHE_CONTROL, "no-store"), (header::RETRY_AFTER, "1")]).into_response())
+}
+
+fn only(allow: &'static str) -> Response {
+    (StatusCode::METHOD_NOT_ALLOWED, [(header::CACHE_CONTROL, "no-store"), (header::ALLOW, allow)]).into_response()
+}
+
+/// A program's request carries no `Origin`, and its agent is `<app>/<rest>`
+/// with `<app>` one the collector allows. Answers that app, else the refusal
+/// (boxed, as a `Response` is large for an `Err`).
+fn gate(headers: &HeaderMap, apps: &BTreeMap<String, Option<String>>) -> Result<String, Box<Response>> {
+    if headers.contains_key(header::ORIGIN) { return Err(Box::new(refuse(StatusCode::FORBIDDEN, "origin not allowed for reports"))); }
+    let agent = headers.get(header::USER_AGENT).and_then(|v| v.to_str().ok()).unwrap_or("");
+    match agent.split_once('/') {
+        Some((app, _)) if apps.contains_key(app) => Ok(app.to_string()),
+        _ => Err(Box::new(refuse(StatusCode::FORBIDDEN, "app not allowed"))),
+    }
+}
+
+/// A validated report or check from the agent's own app, not from a source build.
+fn admit(parsed: Result<AppReport, Invalid>, app: &str) -> Result<AppReport, Box<Response>> {
+    let refusal = match parsed {
+        Err(Invalid::Channel) => refuse(StatusCode::FORBIDDEN, "source channel"),
+        Err(e) => refuse(StatusCode::BAD_REQUEST, &e.to_string()),
+        Ok(r) if app_of(&r) != app => refuse(StatusCode::FORBIDDEN, "app not allowed"),
+        Ok(r) if channel_of(&r) == "source" => refuse(StatusCode::FORBIDDEN, "source channel"),
+        Ok(r) => return Ok(r),
+    };
+    Err(Box::new(refusal))
+}
+
+/// Decorates and writes a report; a sink's failure is printed, not answered.
+fn write_report(state: &AppState, r: AppReport) {
+    let now_ms = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0);
+    if let Err(err) = state.sink.write_report(&decorate_report(r, now_ms)) { eprintln!("visits: sink failed: {err}"); }
+}
+
+fn no_content() -> Response {
+    (StatusCode::NO_CONTENT, [(header::CACHE_CONTROL, "no-store")]).into_response()
+}
+
+/// `POST <app_path>`: one report. Never printed under `--log-ip`.
+async fn report(
+    State(state): State<Arc<AppState>>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    method: Method,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    if method != Method::POST { return only("POST"); }
+    let ip = resolve_ip(&state, &headers, peer);
+    if ignored(&state, ip) { return no_content(); }
+    if let Some(res) = limited(&state, ip) { return res; }
+    let app = match gate(&headers, &state.apps) { Ok(a) => a, Err(res) => return *res };
+    match admit(validate_report(&body), &app) {
+        Ok(r) => write_report(&state, r),
+        Err(res) => return *res,
+    }
+    no_content()
+}
+
+/// `GET <app_path>/check`: written before it is answered, so a client that does
+/// not follow the redirect still counts; an ignored address is answered unwritten.
+async fn check(
+    State(state): State<Arc<AppState>>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    method: Method,
+    headers: HeaderMap,
+    RawQuery(query): RawQuery,
+) -> Response {
+    if method != Method::GET { return only("GET"); }
+    let ip = resolve_ip(&state, &headers, peer);
+    if let Some(res) = limited(&state, ip) { return res; }
+    let app = match gate(&headers, &state.apps) { Ok(a) => a, Err(res) => return *res };
+    let r = match admit(validate_check(query.as_deref().unwrap_or("")), &app) { Ok(r) => r, Err(res) => return *res };
+    if !ignored(&state, ip) { write_report(&state, r); }
+    match state.apps.get(&app).cloned().flatten().and_then(|to| HeaderValue::from_str(&to).ok()) {
+        Some(to) => (StatusCode::FOUND, [(header::CACHE_CONTROL, HeaderValue::from_static("no-store")), (header::LOCATION, to)]).into_response(),
+        None => no_content(),
+    }
 }
 
 #[cfg(feature = "geoip")]

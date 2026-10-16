@@ -1,5 +1,5 @@
 use clap::Parser;
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::sync::{Arc, Mutex};
 use visits::app::{router, AppState};
 use visits::config::{Cli, Command, Serve};
@@ -34,6 +34,8 @@ async fn serve(args: Serve) -> anyhow::Result<()> {
         log_ip: args.log_ip,
         geoip,
         ignore,
+        apps: BTreeMap::new(),
+        app_path: "/a".into(),
     });
     let listener = tokio::net::TcpListener::bind(&args.listen).await?;
     eprintln!("visits: listening on {} for {} from {}", args.listen, args.path, args.origin.join(", "));
