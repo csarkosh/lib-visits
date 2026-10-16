@@ -17,8 +17,11 @@ pub enum Usage {
 /// What happens to a crash report.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Crashes {
+    /// Not recorded.
     Never,
+    /// The person is asked per crash.
     Ask,
+    /// Queued without asking.
     Always,
 }
 
@@ -53,7 +56,7 @@ pub struct Mode {
 ///    which also turns usage `Off` and crashes `Never`;
 /// 3. `app_env_var` equal to `off` (`telemetry off`), the same as rule 2, or to
 ///    `log` (`telemetry log`), which keeps the settings and sets `log`;
-/// 4. `CI` set (`CI`), or not interactive (`not interactive`), where local
+/// 4. `CI` set to anything but empty (`CI`), or not interactive (`not interactive`), where local
 ///    recording continues;
 /// 5. otherwise the settings, `Local` and `Ask` where they say nothing, with
 ///    uploads only for `On`.
@@ -88,7 +91,7 @@ pub fn mode(
         Some("telemetry off")
     } else if log {
         Some("telemetry log")
-    } else if env("CI").is_some() {
+    } else if !var("CI").is_empty() {
         Some("CI")
     } else if !interactive {
         Some("not interactive")

@@ -27,7 +27,7 @@ fn an_empty_settings_records_locally_and_invites() {
 
 #[test]
 fn an_empty_settings_never_uploads_whatever_the_environment() {
-    let envs: &[&[(&str, &str)]] = &[&[], &[("DO_NOT_TRACK", "0")], &[("DO_NOT_TRACK", "false")], &[(VAR, "on")], &[(VAR, "")]];
+    let envs: &[&[(&str, &str)]] = &[&[], &[("DO_NOT_TRACK", "0")], &[("DO_NOT_TRACK", "false")], &[(VAR, "on")], &[(VAR, "")], &[("CI", "")]];
     for vars in envs {
         for ch in [Channel::Release, Channel::Source, Channel::Named("tap".into())] {
             for interactive in [true, false] {
@@ -168,6 +168,14 @@ fn ci_keeps_local_recording_without_uploads() {
     );
     let m = release(&on(), &[("CI", "1")]);
     assert_eq!((m.usage, m.uploads, m.reason), (Usage::On, false, Some("CI")));
+}
+
+#[test]
+fn ci_empty_is_as_if_unset() {
+    let m = release(&on(), &[("CI", "")]);
+    assert_eq!(m, release(&on(), &[]));
+    assert!(m.uploads);
+    assert_eq!(m.reason, None);
 }
 
 #[test]
