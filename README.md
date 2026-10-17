@@ -87,7 +87,8 @@ flowchart LR
 
 - Sinks: `--sink stdout` (default) or `--sink file:<path>`.
 - Your own visits: `--ignore-ips 203.0.113.9,2001:db8::/32` (or `VISITS_IGNORE_IPS`) answers
-  beacons from those addresses and writes nothing.
+  beacons from those addresses and writes nothing. Reports and checks from them are written
+  with `"s": {"own": true}`, so your own use of your program is kept apart, not lost.
 - Event time: each line's `time` is the browser's clock at the event (when within five minutes
   of receipt), so beacons that arrive together after a cold start keep their order.
 - Countries: build with `--features geoip` and pass `--geoip GeoLite2-Country.mmdb`

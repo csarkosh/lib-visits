@@ -49,7 +49,7 @@ pub struct Serve {
     /// Setup only: print each request's resolved address to stderr.
     #[arg(long)]
     pub log_ip: bool,
-    /// Addresses whose beacons are dropped, as addresses or CIDR prefixes (repeatable; env: comma-separated).
+    /// Addresses whose beacons are dropped and whose reports are marked `own`, as addresses or CIDR prefixes (repeatable; env: comma-separated).
     #[arg(long = "ignore-ips", env = "VISITS_IGNORE_IPS", value_delimiter = ',')]
     pub ignore_ips: Vec<String>,
 }

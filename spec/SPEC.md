@@ -205,6 +205,11 @@ The collector adds `s` and nothing else:
 |---|---|
 | `sv` | `2` |
 | `at` | RFC 3339 UTC time of the request, whole seconds |
+| `own` | `true` when the request came from an `--ignore-ips` address, the owner's own use; absent otherwise |
+
+A beacon from an ignored address is never written; a report or a check from one is
+written with `own`, so the owner can use their own program and tell their use from
+everyone else's.
 
 No `visit`, `host`, browser, OS from headers, or country.
 

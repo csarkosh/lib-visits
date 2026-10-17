@@ -43,7 +43,8 @@ pub struct AppState {
     pub trusted_proxies: usize,
     pub log_ip: bool,
     pub geoip: Option<GeoIp>,
-    /// Beacons from these ranges are answered 204 and never written.
+    /// Beacons from these ranges are answered 204 and never written; reports and
+    /// checks from them are written with `s.own`, the owner's own use.
     pub ignore: Vec<IpNet>,
     /// The programs allowed to report, each with the page its check redirects
     /// to, if any. Empty: no report route.
@@ -206,17 +207,21 @@ fn admit(parsed: Result<AppReport, Invalid>, app: &str) -> Result<AppReport, Box
     Err(Box::new(refusal))
 }
 
-/// Decorates and writes a report; a sink's failure is printed, not answered.
-fn record(state: &AppState, r: AppReport) {
+/// Decorates and writes a report, `own` when it came from an ignored address; a
+/// sink's failure is printed, not answered.
+fn record(state: &AppState, r: AppReport, own: bool) {
     let now_ms = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0);
-    if let Err(err) = state.sink.write_report(&decorate_report(r, now_ms)) { eprintln!("visits: sink failed: {err}"); }
+    let mut r = decorate_report(r, now_ms);
+    if let Some(s) = r.s.as_mut() { s.own = own; }
+    if let Err(err) = state.sink.write_report(&r) { eprintln!("visits: sink failed: {err}"); }
 }
 
 fn no_content() -> Response {
     (StatusCode::NO_CONTENT, [(header::CACHE_CONTROL, "no-store")]).into_response()
 }
 
-/// `POST <app_path>`: one report. Never printed under `--log-ip`.
+/// `POST <app_path>`: one report, `own` from an ignored address. Never printed
+/// under `--log-ip`.
 async fn report(
     State(state): State<Arc<AppState>>,
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
@@ -226,18 +231,17 @@ async fn report(
 ) -> Response {
     if method != Method::POST { return only("POST"); }
     let ip = resolve_ip(&state, &headers, peer);
-    if ignored(&state, ip) { return no_content(); }
     if let Some(res) = limited(&state, ip) { return res; }
     let app = match gate(&headers, &state.apps) { Ok(a) => a, Err(res) => return *res };
     match admit(validate_report(&body), &app) {
-        Ok(r) => record(&state, r),
+        Ok(r) => record(&state, r, ignored(&state, ip)),
         Err(res) => return *res,
     }
     no_content()
 }
 
 /// `GET <app_path>/check`: written before it is answered, so a client that does
-/// not follow the redirect still counts; an ignored address is answered unwritten.
+/// not follow the redirect still counts; one from an ignored address is `own`.
 async fn check(
     State(state): State<Arc<AppState>>,
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
@@ -250,7 +254,7 @@ async fn check(
     if let Some(res) = limited(&state, ip) { return res; }
     let app = match gate(&headers, &state.apps) { Ok(a) => a, Err(res) => return *res };
     let r = match admit(validate_check(query.as_deref().unwrap_or("")), &app) { Ok(r) => r, Err(res) => return *res };
-    if !ignored(&state, ip) { record(&state, r); }
+    record(&state, r, ignored(&state, ip));
     match state.apps.get(&app).cloned().flatten().and_then(|to| HeaderValue::from_str(&to).ok()) {
         Some(to) => (StatusCode::FOUND, [(header::CACHE_CONTROL, HeaderValue::from_static("no-store")), (header::LOCATION, to)]).into_response(),
         None => no_content(),

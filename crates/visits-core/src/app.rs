@@ -25,6 +25,9 @@ pub struct AppReport {
 pub struct AppDecoration {
     pub sv: u8,
     pub at: String,
+    /// Sent from one of the collector's `--ignore-ips` addresses: the owner's own use.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub own: bool,
 }
 
 /// The character classes of section 6.6, matched by hand.
@@ -432,9 +435,10 @@ pub fn validate_check(query: &str) -> Result<AppReport, Invalid> {
 }
 
 /// Adds `s` (`sv` 2 and the time of receipt in whole seconds) and `time` (the
-/// same instant with milliseconds), and nothing about the request.
+/// same instant with milliseconds), and nothing about the request. The caller
+/// sets `s.own` for a report from an ignored address.
 pub fn decorate_report(mut r: AppReport, unix_millis: u64) -> AppReport {
-    r.s = Some(AppDecoration { sv: 2, at: rfc3339(unix_millis / 1000) });
+    r.s = Some(AppDecoration { sv: 2, at: rfc3339(unix_millis / 1000), own: false });
     r.time = Some(rfc3339_ms(unix_millis));
     r
 }

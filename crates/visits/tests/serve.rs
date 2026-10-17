@@ -312,7 +312,7 @@ async fn a_check_is_written_then_redirected() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn an_ignored_address_is_redirected_and_not_written() {
+async fn an_ignored_address_is_written_as_the_owners_own() {
     let ignore = vec![IpNet::parse("203.0.113.0/24").unwrap()];
     let srv = launch(&[], programs(), Limiter::new(1000.0, 0.0), None, 1, ignore).await;
     let h = [("User-Agent", ARKOS_UA), ("X-Forwarded-For", "203.0.113.9")];
@@ -320,7 +320,14 @@ async fn an_ignored_address_is_redirected_and_not_written() {
     assert_eq!(status, 302);
     assert!(head.contains(&format!("location: {ARKOS_LATEST}")), "{head}");
     assert_eq!(request(&srv.addr, "POST", "/a", &h, &session()).0, 204);
-    assert!(srv.captured.reports.lock().unwrap().is_empty(), "nothing written for an ignored address");
+    let other = [("User-Agent", ARKOS_UA), ("X-Forwarded-For", "198.51.100.7")];
+    assert_eq!(request(&srv.addr, "POST", "/a", &other, &session()).0, 204);
+    let got = srv.captured.reports.lock().unwrap();
+    let own: Vec<bool> = got.iter().map(|r| r.s.as_ref().unwrap().own).collect();
+    assert_eq!(own, [true, true, false], "the check and the report from the ignored range, then another address");
+    let line = serde_json::to_value(&got[0]).unwrap();
+    assert_eq!(line["s"]["own"], true);
+    assert!(serde_json::to_value(&got[2]).unwrap()["s"].get("own").is_none(), "absent unless true");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

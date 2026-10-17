@@ -1,5 +1,6 @@
-//! `--ignore-ips`: addresses whose beacons are answered and dropped, typically
-//! the site owner's own machines. Plain addresses or CIDR prefixes, v4 or v6.
+//! `--ignore-ips`: addresses whose beacons are answered and dropped, and whose
+//! reports are marked `own`, typically the owner's own machines. Plain
+//! addresses or CIDR prefixes, v4 or v6.
 use std::net::IpAddr;
 
 #[derive(Debug, Clone, PartialEq)]
