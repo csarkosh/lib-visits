@@ -84,3 +84,23 @@ fn an_unparseable_referrer_is_external_without_rh() {
     assert_eq!(s["rk"], "external");
     assert!(s.get("rh").is_none());
 }
+
+#[test]
+fn a_headless_brand_in_the_client_hints_is_a_bot_under_a_phone_user_agent() {
+    let event = validate_json(br#"{"v":1,"n":"view","id":"ipv00vn5r7","p":"/apps"}"#).unwrap().remove(0);
+    let out = decorate(event, &RequestFacts {
+        unix_secs: 1_792_134_519,
+        unix_millis: 1_792_134_519_586,
+        ip: None,
+        user_agent: Some("Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1"),
+        origin_host: "csarko.sh",
+        accept_language: None,
+        sec_ch_ua: Some("\"HeadlessChrome\";v=\"138\", \"Chromium\";v=\"138\", \"Not)A;Brand\";v=\"24\""),
+        sec_ch_ua_platform: None,
+        country: None,
+        secret: None,
+    });
+    let s = &serde_json::to_value(&out).unwrap()["s"];
+    assert_eq!(s["bn"], "HeadlessChrome");
+    assert_eq!(s["bot"], true);
+}

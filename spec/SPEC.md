@@ -59,7 +59,7 @@ Added by the collector beside the client's keys, never over them.
 | `host` | the resolved origin's host |
 | `bn` `bv` | browser family and major version (integer), or `other` and absent |
 | `os` | `Windows`, `macOS`, `iOS`, `Android`, `Linux`, `ChromeOS`, `other`; a platform hint outside this set is `other` |
-| `bot` | `true` when `b` is non-zero or the User-Agent contains (case-insensitive) one of: bot, crawl, spider, slurp, headless, lighthouse, pagespeed, gtmetrix, facebookexternalhit, preview |
+| `bot` | `true` when `b` is non-zero or the User-Agent, or the browser family `bn`, contains (case-insensitive) one of: bot, crawl, spider, slurp, headless, lighthouse, pagespeed, gtmetrix, facebookexternalhit, preview |
 | `rk` | `direct` (no referrer), `internal` (referrer host equals `host` or is a subdomain of it), `external` |
 | `rp` | internal only: the referrer's path |
 | `rh` | external only: the referrer's host, leading `www.` removed; absent when the referrer has no parseable `scheme://host` |

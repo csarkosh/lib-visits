@@ -22,6 +22,8 @@ pub fn decorate(mut event: Event, facts: &RequestFacts) -> Event {
     let ua = facts.user_agent.unwrap_or("");
     let (bn, bv) = browser_of(ua, facts.sec_ch_ua);
     let client_bot = event.fields.get("b").and_then(|v| v.as_i64()).unwrap_or(0) != 0;
+    // The brand too: HeadlessChrome names itself in Sec-CH-UA under a User-Agent that claims a phone.
+    let bot = client_bot || is_crawler(ua) || is_crawler(&bn);
     let host = host_key(facts.origin_host);
     let (rk, rp, rh) = match event.fields.get("r").and_then(|v| v.as_str()).filter(|r| !r.is_empty()) {
         None => ("direct", None, None),
@@ -53,7 +55,7 @@ pub fn decorate(mut event: Event, facts: &RequestFacts) -> Event {
         bn,
         bv,
         os: os_of(ua, facts.sec_ch_ua_platform),
-        bot: client_bot || is_crawler(ua),
+        bot,
         rk: rk.into(),
         rp,
         rh,
