@@ -24,7 +24,7 @@ jobs:
           - { name: macos-arm64, os: macos-14, target: aarch64-apple-darwin, cross: false }
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: rustup target add ${{ matrix.target }}
       - if: matrix.cross
         uses: taiki-e/install-action@v2
@@ -43,7 +43,7 @@ jobs:
           tar -C dist -czf "dist/$dir.tar.gz" "$dir"
           (cd dist && shasum -a 256 "$dir.tar.gz" > "$dir.tar.gz.sha256")
           file "dist/$dir/visits"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.name }}
           path: dist/*.tar.gz*
@@ -53,8 +53,8 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
         with:
           path: dist
           merge-multiple: true
