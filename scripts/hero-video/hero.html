@@ -1,0 +1,246 @@
+<!doctype html>
+<!--
+  The opening clip for lib-visits' page on apps.csarko.sh: the README's visit happening, filmed.
+  scripts/hero-video.sh loads this at 1440 by 800 and calls render(t) for each frame (t in
+  seconds), so every frame is exact and the clip is the same every time. The camera opens close on
+  the referrer, tracks right as each page arrives (its engaged time counting up, its scroll depth
+  filling, "read to the end" lighting), then pulls back and straightens into the whole window on a
+  dark ground lit in the accent, and holds. Open it in a browser and call render(t) in the console
+  to look at a moment. The visit, the words and the tokens are scripts/readme-image/journey.html's
+  dark theme; fonts are Inter and JetBrains Mono (OFL, ../readme-image/fonts/OFL.txt).
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>lib-visits opening clip</title>
+<style>
+  @font-face { font-family: "Inter"; font-weight: 100 900; src: url("../readme-image/fonts/inter-latin-var.woff2") format("woff2"); }
+  @font-face { font-family: "JetBrains Mono"; font-weight: 100 800; src: url("../readme-image/fonts/jetbrains-mono-latin-var.woff2") format("woff2"); }
+  :root {
+    --surface: #111318; --surface-2: #161922; --border: rgba(255, 255, 255, 0.08); --border-strong: rgba(255, 255, 255, 0.14);
+    --text: #e8eaf0; --muted: #a0a8b8; --faint: #7d8597; --accent: #7dd3c0;
+    --accent-tint: rgba(125, 211, 192, 0.08); --accent-border: rgba(125, 211, 192, 0.45);
+    --chrome: linear-gradient(#34353a, #2b2c30); --chrome-line: rgba(0, 0, 0, 0.55); --chrome-title: #b4b6bd;
+    --frame: rgba(255, 255, 255, 0.14);
+    --ord-1: var(--accent);
+    --ord-3: color-mix(in srgb, var(--accent) 66%, var(--surface));
+    --ord-4: color-mix(in srgb, var(--accent) 50%, var(--surface));
+    --sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+    --mono: "JetBrains Mono", ui-monospace, monospace;
+  }
+  html, body { margin: 0; width: 1440px; height: 800px; overflow: hidden; background: #07080b; }
+  body { font-family: var(--sans); color: var(--text); -webkit-font-smoothing: antialiased; }
+
+  /* The ground: near black, lifting a little towards the top, and a pool of the accent where the
+     window lands, as a product sits in a lit studio. */
+  .ground { position: absolute; inset: 0; background:
+      radial-gradient(ellipse 62% 48% at 50% 78%, rgba(125, 211, 192, 0.20), transparent 70%),
+      radial-gradient(ellipse 90% 70% at 50% 100%, rgba(42, 74, 96, 0.35), transparent 75%),
+      linear-gradient(#0d1016, #07080b 70%); }
+  .vignette { position: absolute; inset: 0; pointer-events: none; background: radial-gradient(ellipse 85% 80% at 50% 55%, transparent 55%, rgba(0, 0, 0, 0.55)); }
+
+  /* The camera looks at the stage; the stage is the window and its reflection. */
+  .camera { position: absolute; inset: 0; perspective: 1600px; perspective-origin: 50% 50%; }
+  /* The zoom is CSS zoom on .scaler, so the window is laid out at the size it is filmed at and its
+     text drawn sharp; a transform's scale on a turned (3D) layer is rasterised at rest size and
+     magnified, which made the close-ups soft. Only the position and the turn are a transform. */
+  .stage { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+  .scaler { width: 1008px; }
+  .window { border-radius: 12px; overflow: hidden; background: var(--surface); box-shadow: 0 0 0 1px var(--frame), 0 30px 70px rgba(0, 0, 0, 0.6), 0 8px 20px rgba(0, 0, 0, 0.4);
+    -webkit-box-reflect: below 6px linear-gradient(transparent 62%, rgba(255, 255, 255, 0.16)); }
+  .titlebar { position: relative; height: 38px; display: flex; align-items: center; padding: 0 14px; background: var(--chrome); border-bottom: 1px solid var(--chrome-line); }
+  .lights { display: flex; gap: 8px; }
+  .lights span { width: 12px; height: 12px; border-radius: 50%; box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.18); }
+  .lights span:nth-child(1) { background: #ff5f57; }
+  .lights span:nth-child(2) { background: #febc2e; }
+  .lights span:nth-child(3) { background: #28c840; }
+  .title { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 500; color: var(--chrome-title); }
+  .content { padding: 22px 24px 20px; }
+  h2 { margin: 0 0 4px; font-size: 1.1rem; font-weight: 600; letter-spacing: -0.015em; }
+  .sub { margin: 0 0 18px; font-size: 13px; color: var(--muted); line-height: 1.5; }
+  .flow { display: flex; align-items: stretch; }
+  .node { flex: 1 1 0; min-width: 0; border: 1px solid var(--border); background: var(--surface-2); border-radius: 12px; padding: 12px 12px 11px; display: flex; flex-direction: column; gap: 3px; }
+  .node.edge { background: var(--accent-tint); border-color: var(--accent-border); }
+  .node.lit { box-shadow: 0 0 0 1px var(--accent-border), 0 0 26px rgba(125, 211, 192, 0.18); }
+  .kicker { font-family: var(--mono); font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); }
+  .main { font-size: 15px; font-weight: 600; letter-spacing: -0.01em; line-height: 1.3; }
+  .path { font-family: var(--mono); font-size: 13px; font-weight: 500; }
+  .small { font-size: 12px; color: var(--muted); line-height: 1.35; }
+  .time { margin-top: auto; padding-top: 8px; font-family: var(--mono); font-size: 20px; font-weight: 600; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+  .time small { font-size: 11px; font-weight: 400; color: var(--faint); letter-spacing: 0; margin-left: 4px; }
+  .time.at { font-size: 13px; font-weight: 500; color: var(--muted); }
+  .depth { height: 5px; border-radius: 3px; background: var(--border-strong); overflow: hidden; margin-top: 6px; }
+  .depth > span { display: block; height: 100%; background: var(--accent); }
+  .badge { align-self: flex-start; margin-top: 6px; font-family: var(--mono); font-size: 10.5px; color: var(--accent); border: 1px solid var(--accent-border); border-radius: 999px; padding: 1px 8px; }
+  .arrow { flex: 0 0 26px; display: flex; align-items: center; justify-content: center; color: var(--faint); }
+  .strip { display: flex; height: 12px; border-radius: 6px; overflow: hidden; gap: 2px; margin-top: 18px; }
+  .strip span { transform-origin: 0 50%; }
+  .legend { display: flex; gap: 2px; margin-top: 6px; }
+  .legend span { font-family: var(--mono); font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; }
+  .axis { display: flex; justify-content: space-between; font-family: var(--mono); font-size: 10.5px; color: var(--faint); margin-top: 2px; }
+  .total { margin: 14px 0 0; padding-top: 12px; border-top: 1px solid var(--border); font-size: 13px; color: var(--muted); }
+  .total b { color: var(--text); font-weight: 600; }
+</style>
+</head>
+<body>
+<div class="ground"></div>
+<div class="camera">
+  <div class="stage" id="stage"><div class="scaler" id="scaler">
+    <div class="window">
+      <div class="titlebar"><div class="lights"><span></span><span></span><span></span></div><div class="title" id="title"></div></div>
+      <div class="content">
+        <h2>One visit, start to finish</h2>
+        <p class="sub">The referrer that started it, every page with its engaged time and scroll depth from the leave beacon, and the click that ended it. Sample data.</p>
+        <div class="flow" id="flow"></div>
+        <div class="strip" id="strip"></div>
+        <div class="legend" id="legend"></div>
+        <div class="axis" id="axis"><span>0:00</span><span id="end"></span></div>
+        <p class="total" id="total"></p>
+      </div>
+    </div>
+  </div></div>
+</div>
+<div class="vignette"></div>
+<script>
+// The sample visit, as scripts/readme-image/journey.html has it. `secs` is engaged time, `depth`
+// the scroll depth in percent.
+const VISIT = {
+  window: 'Visits · example.com',
+  from: { name: 'Google', detail: 'search, google.com', summary: 'came from search' },
+  pages: [
+    { path: '/', title: 'Home', secs: 41, depth: 70 },
+    { path: '/blog', title: 'Blog', secs: 22, depth: 45 },
+    { path: '/blog/launch', title: 'Launch post', secs: 185, depth: 100, read: true },
+  ],
+  left: { name: 'Clicked out to GitHub', detail: 'an out-github event', summary: 'left for GitHub' },
+};
+
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const fmt = (s) => (s >= 60 ? `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, '0')}s` : `${s}s`);
+const clock = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+const arrow = '<div class="arrow"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8h11M9 4l4 4-4 4"/></svg></div>';
+document.getElementById('title').textContent = VISIT.window;
+let html = `<div class="node edge" data-step="0"><span class="kicker">Arrived from</span><span class="main">${esc(VISIT.from.name)}</span><span class="small">${esc(VISIT.from.detail)}</span><span class="time at">at 0:00</span></div>`;
+let at = 0;
+VISIT.pages.forEach((p, i) => {
+  html += `<div class="arrow-wrap" data-step="${i + 1}" style="display:contents">${arrow}</div><div class="node" data-step="${i + 1}"><span class="kicker">Page ${i + 1} · at ${clock(at)}</span><span class="main path">${esc(p.path)}</span><span class="small">${esc(p.title)}</span>`
+    + `<div class="depth"><span data-depth="${p.depth}" style="width:0%"></span></div>`
+    + (p.read ? '<span class="badge" data-read>read to the end</span>' : `<span class="small" style="margin-top:4px" data-scrolled="${p.depth}">scrolled 0%</span>`)
+    + `<span class="time"><span data-secs="${p.secs}">0s</span><small>engaged</small></span></div>`;
+  at += p.secs;
+});
+const last = VISIT.pages.length + 1;
+html += `<div class="arrow-wrap" data-step="${last}" style="display:contents">${arrow}</div><div class="node edge" data-step="${last}"><span class="kicker">Left</span><span class="main">${esc(VISIT.left.name)}</span><span class="small">${esc(VISIT.left.detail)}</span><span class="time at">at ${clock(at)}</span></div>`;
+document.getElementById('flow').innerHTML = html;
+const colors = ['var(--ord-3)', 'var(--ord-4)', 'var(--ord-1)'];
+document.getElementById('strip').innerHTML = VISIT.pages.map((p, i) => `<span style="flex:${p.secs} 1 0;background:${colors[i % colors.length]}"></span>`).join('');
+document.getElementById('legend').innerHTML = VISIT.pages.map((p) => `<span style="flex:${p.secs} 1 0">${esc(p.path)} ${fmt(p.secs)}</span>`).join('');
+document.getElementById('end').textContent = clock(at);
+const reads = VISIT.pages.filter((p) => p.read).length;
+document.getElementById('total').innerHTML = `<b>${fmt(at)}</b> on the site · <b>${VISIT.pages.length}</b> pages · <b>${reads}</b> read to the end · ${esc(VISIT.from.summary)}, ${esc(VISIT.left.summary)}`;
+
+// ---- The timeline, in seconds.
+const STEP_AT = [0.15, 0.95, 1.85, 2.75, 3.85];     // each step of the visit arrives
+const COUNT_FOR = [0, 0.75, 0.6, 1.0, 0];           // how long its counter runs
+const STRIP_AT = 4.1, STRIP_FOR = 0.9;              // the time strip grows
+const TOTAL_AT = 4.9;                               // the summary line arrives
+const PULL_AT = 3.7, PULL_FOR = 2.5;                // the camera pulls back into the whole window
+export_duration = 7.2;                              // the clip, with the hold on the key art
+
+const clamp = (v) => Math.min(1, Math.max(0, v));
+const smooth = (v) => { v = clamp(v); return v * v * (3 - 2 * v); };
+const inOut = (v) => { v = clamp(v); return v < 0.5 ? 4 * v * v * v : 1 - Math.pow(-2 * v + 2, 3) / 2; };
+const outCubic = (v) => 1 - Math.pow(1 - clamp(v), 3);
+const lerp = (a, b, k) => a + (b - a) * k;
+
+const stage = document.getElementById('stage');
+const scaler = document.getElementById('scaler');
+const steps = [...document.querySelectorAll('.node')];
+const arrows = [...document.querySelectorAll('.arrow-wrap')].map((w) => w.firstElementChild);
+
+// Where things are on the stage, measured once at rest: the camera aims at them.
+let geo = null;
+function measure() {
+  stage.style.transform = 'none';
+  stage.style.filter = 'none';
+  scaler.style.zoom = '1';
+  const s = stage.getBoundingClientRect();
+  geo = {
+    w: s.width, h: s.height,
+    steps: steps.map((n) => { const r = n.getBoundingClientRect(); return { x: r.left - s.left + r.width / 2, y: r.top - s.top + r.height / 2 }; }),
+  };
+}
+
+// The camera: a point of the stage at the frame's centre, a zoom and a turn. At rest the window
+// sits a little below the middle, leaving the ground above it to the page's title.
+const FRAME = { w: 1440, h: 800 };
+const REST = { scale: 0.86, y: 0.585 };
+function camera(t) {
+  // Tracking: from the referrer to the last step while the visit plays.
+  const track = smooth((t - 0.1) / (STEP_AT[4] + 0.2));
+  const fx = lerp(geo.steps[0].x, geo.steps[4].x, track);
+  const fy = geo.steps[0].y;
+  const close = lerp(2.75, 2.35, smooth(t / PULL_AT));
+  // The pull back, into the whole window.
+  const pull = inOut((t - PULL_AT) / PULL_FOR);
+  const scale = lerp(close, REST.scale, pull);
+  const cx = lerp(fx, geo.w / 2, pull);
+  const cy = lerp(fy, geo.h / 2, pull);
+  // Low in the frame while it is close, so the ground above stays clear for the page's title.
+  const frameY = lerp(FRAME.h * 0.66, FRAME.h * REST.y, pull);
+  const turn = lerp(16, 0, outCubic((t - 0.2) / (PULL_AT + PULL_FOR - 0.2)));
+  const tilt = lerp(6, 0, outCubic((t - 0.2) / (PULL_AT + PULL_FOR - 0.2)));
+  const blur = lerp(2.2, 0, smooth(t / 0.7));
+  return { scale, cx, cy, tx: FRAME.w / 2 - cx * scale, ty: frameY - cy * scale, turn, tilt, blur };
+}
+
+function render(t) {
+  if (!geo) measure();
+  // The visit: each step rises in, the counters run, the depths fill.
+  steps.forEach((n, i) => {
+    const k = outCubic((t - STEP_AT[i]) / 0.45);
+    n.style.opacity = k;
+    n.style.transform = `translateY(${(1 - k) * 14}px)`;
+    const run = COUNT_FOR[i] ? clamp((t - STEP_AT[i] - 0.15) / COUNT_FOR[i]) : 0;
+    const eased = outCubic(run);
+    const secs = n.querySelector('[data-secs]');
+    if (secs) secs.textContent = fmt(Math.round(Number(secs.dataset.secs) * eased));
+    const depth = n.querySelector('[data-depth]');
+    if (depth) depth.style.width = `${Number(depth.dataset.depth) * eased}%`;
+    const scrolled = n.querySelector('[data-scrolled]');
+    if (scrolled) scrolled.textContent = `scrolled ${Math.round(Number(scrolled.dataset.scrolled) * eased)}%`;
+    const read = n.querySelector('[data-read]');
+    if (read) { const r = outCubic((t - STEP_AT[i] - 0.15 - COUNT_FOR[i] + 0.1) / 0.35); read.style.opacity = r; read.style.transform = `scale(${0.85 + 0.15 * r})`; }
+    // The step being lived lights; it dims as the next arrives.
+    const live = t >= STEP_AT[i] && (i === steps.length - 1 ? t < PULL_AT + 0.6 : t < STEP_AT[i + 1]);
+    n.classList.toggle('lit', live && i > 0 && i < steps.length - 1);
+  });
+  arrows.forEach((a, i) => { a.style.opacity = outCubic((t - STEP_AT[i + 1] + 0.1) / 0.35); });
+  // The card's own heading and lead arrive with the pull back: before it they would sit behind
+  // the page's title, and the close-ups are about the visit.
+  const heading = outCubic((t - PULL_AT - 0.5) / 0.9);
+  document.querySelector('h2').style.opacity = heading;
+  document.querySelector('.sub').style.opacity = heading;
+  // The strip, the legend and the summary, once the visit is over.
+  const strip = outCubic((t - STRIP_AT) / STRIP_FOR);
+  document.querySelectorAll('#strip span').forEach((s) => { s.style.transform = `scaleX(${strip})`; });
+  document.getElementById('legend').style.opacity = outCubic((t - STRIP_AT - 0.4) / 0.5);
+  document.getElementById('axis').style.opacity = outCubic((t - STRIP_AT - 0.4) / 0.5);
+  document.getElementById('total').style.opacity = outCubic((t - TOTAL_AT) / 0.6);
+  // The camera.
+  const c = camera(t);
+  // The point the camera looks at lands where it should in the frame; the turn and the tilt are
+  // about that point, so they swing the window around what is in focus. The zoom lays the window
+  // out at its filmed size; the transform only places and turns it.
+  scaler.style.zoom = String(c.scale);
+  const fx = c.cx * c.scale, fy = c.cy * c.scale;
+  stage.style.transform = `translate(${c.tx}px, ${c.ty}px) translate(${fx}px, ${fy}px) rotateY(${c.turn}deg) rotateX(${c.tilt}deg) translate(${-fx}px, ${-fy}px)`;
+  stage.style.filter = c.blur > 0.05 ? `blur(${c.blur}px)` : 'none';
+}
+
+window.render = render;
+window.duration = export_duration;
+document.fonts.ready.then(() => { measure(); render(0); document.body.dataset.ready = '1'; });
+</script>
+</body>
+</html>
