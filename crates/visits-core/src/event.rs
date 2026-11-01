@@ -27,6 +27,9 @@ pub struct Decoration {
     pub at: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub visit: Option<String>,
+    /// The visitor across days, only under `--visitor`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vid: Option<String>,
     pub host: String,
     pub bn: String,
     #[serde(skip_serializing_if = "Option::is_none")]

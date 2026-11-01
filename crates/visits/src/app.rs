@@ -51,6 +51,8 @@ pub struct AppState {
     pub apps: BTreeMap<String, Option<String>>,
     /// The report route; the check route is this followed by `/check`.
     pub app_path: String,
+    /// Write `s.vid`, the visitor across days, beside the daily visit (`--visitor`).
+    pub visitor: bool,
 }
 
 /// The beacon route is mounted when there is an origin to allow, the report
@@ -147,6 +149,7 @@ async fn beacon(
         sec_ch_ua_platform: h("sec-ch-ua-platform"),
         country,
         secret: state.secret.as_deref(),
+        visitor: state.visitor,
     };
     let decorated: Vec<_> = events.into_iter().map(|e| decorate(e, &facts)).collect();
     if let Err(err) = state.sink.write(&decorated) { eprintln!("visits: sink failed: {err}"); }

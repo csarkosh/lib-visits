@@ -24,13 +24,13 @@ async fn start(secret: Option<&str>, trusted_proxies: usize) -> Server {
 }
 
 async fn start_with(secret: Option<&str>, trusted_proxies: usize, ignore: Vec<IpNet>) -> Server {
-    launch(&["https://example.com"], BTreeMap::new(), Limiter::new(3.0, 0.0), secret, trusted_proxies, ignore).await
+    launch(&["https://example.com"], BTreeMap::new(), Limiter::new(3.0, 0.0), secret, trusted_proxies, ignore, false).await
 }
 
 /// A collector for installed programs only: no origin, so no beacon route, and
 /// one trusted proxy, so `X-Forwarded-For` names the client.
 async fn start_apps(apps: BTreeMap<String, Option<String>>, limiter: Limiter) -> Server {
-    launch(&[], apps, limiter, None, 1, vec![]).await
+    launch(&[], apps, limiter, None, 1, vec![], false).await
 }
 
 async fn launch(
@@ -40,6 +40,7 @@ async fn launch(
     secret: Option<&str>,
     trusted_proxies: usize,
     ignore: Vec<IpNet>,
+    visitor: bool,
 ) -> Server {
     let captured = Arc::new(Capture::default());
     let state = Arc::new(AppState {
@@ -54,6 +55,7 @@ async fn launch(
         ignore,
         apps,
         app_path: "/a".into(),
+        visitor,
     });
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap().to_string();
@@ -101,6 +103,20 @@ async fn accepts_a_post_decorates_it_and_writes_it() {
     assert_eq!(s.bn, "Firefox");
     assert_eq!(s.rk, "external");
     assert_eq!(s.visit.as_ref().unwrap().len(), 16);
+    assert!(s.vid.is_none(), "no visitor unless asked");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn with_visitor_on_a_beacon_carries_a_visitor_that_names_the_browser() {
+    let srv = launch(&["https://example.com"], BTreeMap::new(), Limiter::new(10.0, 0.0), Some("s"), 1, vec![], true).await;
+    let send = |ua: &str| request(&srv.addr, "POST", "/v", &[("Origin", "https://example.com"), ("User-Agent", ua), ("X-Forwarded-For", "203.0.113.9, 10.0.0.1")], VIEW).0;
+    assert_eq!((send(UA), send(UA), send("Other/1.0")), (204, 204, 204));
+    let got = srv.captured.events.lock().unwrap();
+    let vids: Vec<String> = got.iter().map(|e| e.s.as_ref().unwrap().vid.clone().expect("vid")).collect();
+    assert_eq!(vids[0].len(), 16);
+    assert_eq!(vids[0], vids[1], "the same browser is the same visitor");
+    assert_ne!(vids[0], vids[2], "another browser is another visitor");
+    assert_ne!(Some(&vids[0]), got[0].s.as_ref().unwrap().visit.as_ref(), "the visitor is not the visit");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -314,7 +330,7 @@ async fn a_check_is_written_then_redirected() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn an_ignored_address_is_written_as_the_owners_own() {
     let ignore = vec![IpNet::parse("203.0.113.0/24").unwrap()];
-    let srv = launch(&[], programs(), Limiter::new(1000.0, 0.0), None, 1, ignore).await;
+    let srv = launch(&[], programs(), Limiter::new(1000.0, 0.0), None, 1, ignore, false).await;
     let h = [("User-Agent", ARKOS_UA), ("X-Forwarded-For", "203.0.113.9")];
     let (status, head, _) = request(&srv.addr, "GET", &format!("/a/check?{}", check_query()), &h, "");
     assert_eq!(status, 302);
@@ -414,7 +430,7 @@ async fn each_report_route_takes_one_method() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn beacons_and_reports_share_one_bucket() {
-    let srv = launch(&["https://example.com"], programs(), Limiter::new(3.0, 0.0), None, 1, vec![]).await;
+    let srv = launch(&["https://example.com"], programs(), Limiter::new(3.0, 0.0), None, 1, vec![], false).await;
     let beacon = [("Origin", "https://example.com"), ("X-Forwarded-For", "198.51.100.7")];
     let report = [("User-Agent", ARKOS_UA), ("X-Forwarded-For", "198.51.100.7")];
     assert_eq!(request(&srv.addr, "POST", "/v", &beacon, VIEW).0, 204);

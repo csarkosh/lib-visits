@@ -1,7 +1,7 @@
 use crate::classify::{browser_of, host_key, is_crawler, os_of, split_referrer};
 use crate::clock::{rfc3339, rfc3339_ms};
 use crate::event::{Decoration, Event};
-use crate::visit::visit_hash;
+use crate::visit::{visit_hash, visitor_hash};
 
 /// What the binary knows about a request and the core must not fetch itself.
 pub struct RequestFacts<'a> {
@@ -16,6 +16,8 @@ pub struct RequestFacts<'a> {
     pub sec_ch_ua_platform: Option<&'a str>,
     pub country: Option<String>,
     pub secret: Option<&'a [u8]>,
+    /// Whether to write the visitor beside the visit (`--visitor`).
+    pub visitor: bool,
 }
 
 pub fn decorate(mut event: Event, facts: &RequestFacts) -> Event {
@@ -36,9 +38,9 @@ pub fn decorate(mut event: Event, facts: &RequestFacts) -> Event {
     let lg = if event.fields.contains_key("lg") { None } else {
         facts.accept_language.and_then(|al| al.split(',').next()).map(|t| t.split(';').next().unwrap_or("").trim().to_string()).filter(|t| (1..=35).contains(&t.len()) && t.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-'))
     };
-    let visit = match (facts.secret, facts.ip) {
-        (Some(secret), Some(ip)) => Some(visit_hash(secret, facts.unix_secs, ip, ua)),
-        _ => None,
+    let (visit, vid) = match (facts.secret, facts.ip) {
+        (Some(secret), Some(ip)) => (Some(visit_hash(secret, facts.unix_secs, ip, ua)), facts.visitor.then(|| visitor_hash(secret, ip, ua))),
+        _ => (None, None),
     };
     // A client clock within five minutes of receipt is believed; beyond that the
     // clock is wrong, and the time of receipt stands in.
@@ -51,6 +53,7 @@ pub fn decorate(mut event: Event, facts: &RequestFacts) -> Event {
         sv: 1,
         at: rfc3339(facts.unix_secs),
         visit,
+        vid,
         host,
         bn,
         bv,
@@ -72,7 +75,7 @@ mod tests {
     #[test]
     fn wildcard_language_gives_no_lg() {
         let event: Event = serde_json::from_str(r#"{"v":1,"n":"view","id":"a","p":"/"}"#).unwrap();
-        let facts = RequestFacts { unix_secs: 0, unix_millis: 0, ip: None, user_agent: None, origin_host: "x.com", accept_language: Some("*"), sec_ch_ua: None, sec_ch_ua_platform: None, country: None, secret: None };
+        let facts = RequestFacts { unix_secs: 0, unix_millis: 0, ip: None, user_agent: None, origin_host: "x.com", accept_language: Some("*"), sec_ch_ua: None, sec_ch_ua_platform: None, country: None, secret: None, visitor: false };
         assert_eq!(decorate(event, &facts).s.unwrap().lg, None);
     }
 
@@ -80,12 +83,12 @@ mod tests {
     fn an_overlong_language_gives_no_lg() {
         let event: Event = serde_json::from_str(r#"{"v":1,"n":"view","id":"a","p":"/"}"#).unwrap();
         let long = "a".repeat(300);
-        let facts = RequestFacts { unix_secs: 0, unix_millis: 0, ip: None, user_agent: None, origin_host: "x.com", accept_language: Some(&long), sec_ch_ua: None, sec_ch_ua_platform: None, country: None, secret: None };
+        let facts = RequestFacts { unix_secs: 0, unix_millis: 0, ip: None, user_agent: None, origin_host: "x.com", accept_language: Some(&long), sec_ch_ua: None, sec_ch_ua_platform: None, country: None, secret: None, visitor: false };
         assert_eq!(decorate(event, &facts).s.unwrap().lg, None);
     }
 
     fn at(unix_millis: u64) -> RequestFacts<'static> {
-        RequestFacts { unix_secs: unix_millis / 1000, unix_millis, ip: None, user_agent: None, origin_host: "x.com", accept_language: None, sec_ch_ua: None, sec_ch_ua_platform: None, country: None, secret: None }
+        RequestFacts { unix_secs: unix_millis / 1000, unix_millis, ip: None, user_agent: None, origin_host: "x.com", accept_language: None, sec_ch_ua: None, sec_ch_ua_platform: None, country: None, secret: None, visitor: false }
     }
 
     #[test]
@@ -96,6 +99,22 @@ mod tests {
         assert_eq!(decorate(far, &at(1_792_032_030_000)).time.as_deref(), Some("2026-10-15T02:40:30.000Z"));
         let none: Event = serde_json::from_str(r#"{"v":1,"n":"view","id":"a","p":"/"}"#).unwrap();
         assert_eq!(decorate(none, &at(1_792_032_030_250)).time.as_deref(), Some("2026-10-15T02:40:30.250Z"));
+    }
+
+    #[test]
+    fn the_visitor_is_written_only_when_asked_and_known() {
+        let view = || serde_json::from_str::<Event>(r#"{"v":1,"n":"view","id":"a","p":"/"}"#).unwrap();
+        let facts = |visitor: bool, ip: Option<&'static str>| RequestFacts { unix_secs: 1_792_032_030, unix_millis: 1_792_032_030_000, ip, user_agent: Some("UA"), origin_host: "x.com", accept_language: None, sec_ch_ua: None, sec_ch_ua_platform: None, country: None, secret: Some(b"test-secret"), visitor };
+        let off = decorate(view(), &facts(false, Some("203.0.113.9"))).s.unwrap();
+        assert!(off.visit.is_some() && off.vid.is_none(), "off by default");
+        let on = decorate(view(), &facts(true, Some("203.0.113.9"))).s.unwrap();
+        assert_eq!(on.vid.as_deref(), Some(visitor_hash(b"test-secret", "203.0.113.9", "UA").as_str()));
+        assert_ne!(on.vid, on.visit);
+        let tomorrow = RequestFacts { unix_secs: 1_792_032_030 + 86_400, ..facts(true, Some("203.0.113.9")) };
+        let next = decorate(view(), &tomorrow).s.unwrap();
+        assert_eq!(next.vid, on.vid, "the visitor holds across the day roll");
+        assert_ne!(next.visit, on.visit, "the visit does not");
+        assert!(decorate(view(), &facts(true, None)).s.unwrap().vid.is_none(), "no address, no visitor");
     }
 
     #[test]

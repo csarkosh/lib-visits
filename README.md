@@ -86,6 +86,13 @@ flowchart LR
 ## More
 
 - Sinks: `--sink stdout` (default) or `--sink file:<path>`.
+- Single-page apps: the script counts a view when the page loads; after a route change, call
+  `visits.page()`. It sends the page before's leave and a view of the new path with the page
+  before as its referrer (`nt: "spa"`), and does nothing while the path is unchanged.
+- Returning visitors: `--visitor` (or `VISITS_VISITOR=true`) adds `s.vid` beside the daily
+  visit, a hash keyed on the secret alone, so a browser that comes back another day is the same
+  visitor for as long as its address and User-Agent hold. Off by default, since it links a
+  browser's days, which the visit never does; rotating the secret ends every visitor too.
 - Your own visits: `--ignore-ips 203.0.113.9,2001:db8::/32` (or `VISITS_IGNORE_IPS`) answers
   beacons from those addresses and writes nothing. Reports and checks from them are written
   with `"s": {"own": true}`, so your own use of your program is kept apart, not lost.

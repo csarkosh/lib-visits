@@ -25,6 +25,7 @@ fn every_fixture_decorates_to_its_out() {
             sec_ch_ua_platform: s("sec_ch_ua_platform"),
             country: s("country").map(String::from),
             secret: s("secret").map(str::as_bytes),
+            visitor: false,
         });
         assert_eq!(serde_json::to_value(&out).unwrap(), f["out"], "{name}");
     }
@@ -79,6 +80,7 @@ fn an_unparseable_referrer_is_external_without_rh() {
         sec_ch_ua_platform: None,
         country: None,
         secret: None,
+        visitor: false,
     });
     let s = serde_json::to_value(&out).unwrap()["s"].clone();
     assert_eq!(s["rk"], "external");
@@ -99,6 +101,7 @@ fn a_headless_brand_in_the_client_hints_is_a_bot_under_a_phone_user_agent() {
         sec_ch_ua_platform: None,
         country: None,
         secret: None,
+        visitor: false,
     });
     let s = &serde_json::to_value(&out).unwrap()["s"];
     assert_eq!(s["bn"], "HeadlessChrome");

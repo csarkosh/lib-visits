@@ -48,7 +48,7 @@ export function load(options = {}) {
     documentElement: { scrollHeight: 4000 },
     querySelector: (sel) => elements[sel] ?? null,
   });
-  const location = { href, hostname, host: url.host, pathname: url.pathname, search: url.search, hash: url.hash, protocol: url.protocol };
+  const location = { href, hostname, host: url.host, origin: url.origin, pathname: url.pathname, search: url.search, hash: url.hash, protocol: url.protocol };
   const navigator = {
     webdriver, language: "en-US", maxTouchPoints: 0,
     sendBeacon: (u, body) => { sent.push({ method: "beacon", url: u, body }); return beaconReturns; },

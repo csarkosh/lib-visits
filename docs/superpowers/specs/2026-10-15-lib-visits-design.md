@@ -92,7 +92,7 @@ is never counted.
 | `t` | `document.title`, at most 200 characters |
 | `r` | `document.referrer` without its query or fragment (a same-site referrer carries the previous page's query, which may hold a token), at most 2 KB; the server classifies it |
 | `us` `um` `uc` `ut` `uo` `cr` | the campaign parameters `utm_source`, `utm_medium`, `utm_campaign`, `utm_term`, `utm_content`, `ref`, each only when present, each at most 100 characters. The rest of the query string is never sent, so a token in a URL never lands in a log |
-| `nt` | navigation type from `PerformanceNavigationTiming`: `navigate`, `reload`, `back_forward`, `prerender` |
+| `nt` | navigation type from `PerformanceNavigationTiming`: `navigate`, `reload`, `back_forward`, `prerender`; `spa` for a route change a single-page app reports with `visits.page()` (added 2026-11-01: the page before leaves, the new path is viewed with the page before as `r`) |
 | `sw` `sh` | `screen.width`, `screen.height` |
 | `vw` `vh` | `innerWidth`, `innerHeight` |
 | `dpr` | `devicePixelRatio`, two decimals |
@@ -238,6 +238,12 @@ Stateless: every instance and every cold start agree, with no session table. The
 input and is never written. Tomorrow's salt is unrelated to today's, so nothing links two
 days; this is the ceiling, by design.
 
+*Amended 2026-11-01:* an operator who wants to recognise a returning browser turns on
+`--visitor`, and the collector writes `s.vid = hex(HMAC(secret, "visitor\n" + ip + "\n" + ua))[0..16]`
+beside the visit: keyed on the secret alone, so it holds across days for as long as the address
+and the User-Agent do, and ends with a rotation of the secret like the visit. Off by default, the
+ceiling above stands; on, the operator has chosen to link a browser's days and says so.
+
 The trade-off against GoatCounter's ephemeral in-memory salt is stated, not hidden: a
 persistent secret means whoever holds it together with the events can test whether a
 given address and User-Agent produced a visit on a given day. The secret therefore lives
@@ -253,6 +259,7 @@ Added as the object `s` beside the client's keys, never over them:
 | `sv` | decoration version, `1` |
 | `at` | the server's RFC 3339 time; the client sends no clock |
 | `visit` | section 4.4, when a secret is configured |
+| `vid` | the visitor across days, under `--visitor` only (section 4.4, amended 2026-11-01) |
 | `host` | the resolved origin's host |
 | `bn` `bv` | browser family and major version: from `Sec-CH-UA` when present, else a small `User-Agent` regex set (Chrome, Edge, Firefox, Safari, Opera, Samsung Internet, Chrome iOS, Firefox iOS; everything else `other`) |
 | `os` | `Sec-CH-UA-Platform` when present, else from the User-Agent: Windows, macOS, iOS, Android, Linux, ChromeOS, `other` |

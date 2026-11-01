@@ -34,6 +34,7 @@ async fn serve(args: Serve) -> anyhow::Result<()> {
     let (burst, per_second) = args.limit_parts()?;
     let ignore = visits::ignore::parse_list(&args.ignore_ips).map_err(|e| anyhow::anyhow!("--ignore-ips: {e}"))?;
     if !ignore.is_empty() { eprintln!("visits: dropping beacons and marking reports own from {} ignored address range(s)", ignore.len()); }
+    if args.visitor { eprintln!("visits: writing the visitor (s.vid) beside the daily visit"); }
     let geoip = load_geoip(args.geoip.as_deref())?;
     let state = Arc::new(AppState {
         origins: args.origin.iter().map(|o| o.trim_end_matches('/').to_string()).collect::<HashSet<_>>(),
@@ -47,6 +48,7 @@ async fn serve(args: Serve) -> anyhow::Result<()> {
         ignore,
         apps,
         app_path: args.app_path.clone(),
+        visitor: args.visitor,
     });
     let listener = tokio::net::TcpListener::bind(&args.listen).await?;
     if args.origin.is_empty() {

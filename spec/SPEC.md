@@ -32,7 +32,7 @@ whose values are strings (≤ 200 chars), numbers or booleans.
 | `t` | string | 200 | title |
 | `r` | string | 2048 | referrer, origin and path only: no query, no fragment |
 | `us` `um` `uc` `ut` `uo` `cr` | string | 100 | utm_source, utm_medium, utm_campaign, utm_term, utm_content, ref |
-| `nt` | string | 16 | `navigate`, `reload`, `back_forward`, `prerender` |
+| `nt` | string | 16 | `navigate`, `reload`, `back_forward`, `prerender`; `spa` for a view a single-page app reported with `visits.page()` (its `r` is the page before, on the same origin) |
 | `sw` `sh` `vw` `vh` | integer | | screen and viewport size |
 | `dpr` | number | | device pixel ratio |
 | `th` | string | 8 | `dark` or `light` |
@@ -56,6 +56,7 @@ Added by the collector beside the client's keys, never over them.
 | `sv` | `1` |
 | `at` | RFC 3339 UTC time of the request, whole seconds, e.g. `2026-10-15T02:40:30Z` |
 | `visit` | 16 lowercase hex chars (section 4); absent when no secret is configured |
+| `vid` | 16 lowercase hex chars, the visitor (section 4), only when the collector runs with `--visitor` and has a secret and an address |
 | `host` | the resolved origin's host |
 | `bn` `bv` | browser family and major version (integer), or `other` and absent |
 | `os` | `Windows`, `macOS`, `iOS`, `Android`, `Linux`, `ChromeOS`, `other`; a platform hint outside this set is `other` |
@@ -89,6 +90,15 @@ The visit cannot be reversed, but it can be tested: whoever holds the secret and
 the events can check whether a given address and User-Agent produced a visit on
 a given day. Keep the secret out of wherever the events are stored, and rotate
 it; a rotation ends every visit at that moment, which is the only cost.
+
+With `--visitor`, the collector also writes the visitor, keyed on the secret alone, so
+it holds from one day to the next for as long as the address and the User-Agent do:
+
+    vid = lowercase_hex(HMAC-SHA256(secret, "visitor\n" + ip + "\n" + user_agent))[0..16]
+
+It links a browser's days, which the visit by design does not, and it is off by default.
+Everything said of the visit holds for it: it cannot be reversed, it can be tested by
+whoever holds the secret and the events, and a rotation of the secret ends every visitor.
 
 ## 5. JSON lines
 
