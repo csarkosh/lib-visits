@@ -126,3 +126,5 @@ The program lists the events it records, what each may carry and the surfaces it
     surfaces = ["terminal", "viewer", "browser"]
 
 The program's loop (seal, queue, upload, check) is one `no_run` example in the crate docs, `crates/visits-app/src/lib.rs`; the wire format is section 6 of `spec/SPEC.md`.
+
+[<img src="https://donate.csarko.sh/icon.svg" alt="" height="16"> Buy me tokens](https://donate.csarko.sh/visits)
