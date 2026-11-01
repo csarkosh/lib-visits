@@ -20,8 +20,8 @@ jobs:
           # Static musl binaries, cross-compiled in cross's containers.
           - { name: linux-amd64, os: ubuntu-latest, target: x86_64-unknown-linux-musl, cross: true }
           - { name: linux-arm64, os: ubuntu-latest, target: aarch64-unknown-linux-musl, cross: true }
-          # macos-14 runs on Apple silicon, so this is a native build.
-          - { name: macos-arm64, os: macos-14, target: aarch64-apple-darwin, cross: false }
+          # macos-15 runs on Apple silicon, so this is a native build (macos-14 was retired on 2026-11-02).
+          - { name: macos-arm64, os: macos-15, target: aarch64-apple-darwin, cross: false }
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
