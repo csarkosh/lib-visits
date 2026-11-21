@@ -53,4 +53,23 @@ pub struct Decoration {
     pub la: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub lo: Option<f64>,
+    /// The network the address is on: its autonomous system's number and its owner's name (an
+    /// ISP, a company, a cloud), from an ASN database (`--asn`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub an: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ao: Option<String>,
+    /// The kind of network: `tor`, `cloud`, `vpn` or `relay`; absent for any other.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub nk: Option<String>,
+    /// Chromium's network hints, when the page asked for them with `Accept-CH`: the effective
+    /// connection type, the round trip in ms, the downlink in Mbit/s, and Save-Data when on.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ect: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rtt: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dl: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sd: Option<bool>,
 }

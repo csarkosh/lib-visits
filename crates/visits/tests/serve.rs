@@ -52,6 +52,8 @@ async fn launch(
         trusted_proxies,
         log_ip: false,
         geoip: None,
+        asn: None,
+        tor: Default::default(),
         ignore,
         apps,
         app_path: "/a".into(),

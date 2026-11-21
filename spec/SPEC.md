@@ -69,6 +69,13 @@ Added by the collector beside the client's keys, never over them.
 | `rg` | the region (state, province, county) the GeoIP database places the address in, its English name, at most 64 characters; only with a city database |
 | `ct` | the city, likewise; only with a city database |
 | `la` `lo` | the city's own latitude and longitude in the database, degrees rounded to one decimal (about 10 km), where the city is and not where the visitor is; only with a city database that has them |
+| `an` | the address's autonomous system number (integer), when an ASN database is configured (`--asn`) |
+| `ao` | the autonomous system's owner as the ASN database names it (an ISP, a company, a cloud), at most 64 characters |
+| `nk` | the kind of network: `tor` when the address is on the Tor exit list (`--tor`), else `cloud`, `vpn` or `relay` when `an` is on the collector's list of cloud and hosting providers, VPN carriers, or relays (iCloud Private Relay, Cloudflare WARP); absent for every other network |
+| `ect` | Chromium's `ECT` request header (the effective connection type: `slow-2g`, `2g`, `3g`, `4g`), when the page asked for it with `Accept-CH`; any other value is dropped |
+| `rtt` | the `RTT` header, the round trip in ms (integer, at most 10000) |
+| `dl` | the `Downlink` header, Mbit/s (at most 10000) |
+| `sd` | `true` when the `Save-Data` header is `on`; absent otherwise |
 
 Browser from `Sec-CH-UA` when present: the brand that is neither `Chromium` nor
 starts with `Not`, else `Chromium`; its `v`; a hint brand over 32 characters is ignored and the User-Agent decides. `Google Chrome` is reported as `Chrome` and `Microsoft Edge` as `Edge`, so the name is the same with or without hints. Else from the User-Agent, first

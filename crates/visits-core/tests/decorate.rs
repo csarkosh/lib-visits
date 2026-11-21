@@ -1,5 +1,5 @@
 use serde_json::Value;
-use visits_core::{browser_of, decorate, is_crawler, os_of, split_referrer, validate_json, RequestFacts};
+use visits_core::{browser_of, decorate, is_crawler, network_hints, network_kind, os_of, split_referrer, validate_json, RequestFacts};
 
 fn fixture(name: &str) -> Value {
     let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../spec/fixtures/");
@@ -8,7 +8,7 @@ fn fixture(name: &str) -> Value {
 
 #[test]
 fn every_fixture_decorates_to_its_out() {
-    for name in ["view", "view-internal", "leave", "click-named", "click-outbound", "vitals"] {
+    for name in ["view", "view-internal", "view-city", "view-network", "leave", "click-named", "click-outbound", "vitals"] {
         let f = fixture(name);
         let facts = &f["facts"];
         let s = |k: &str| facts.get(k).and_then(Value::as_str);
@@ -30,6 +30,13 @@ fn every_fixture_decorates_to_its_out() {
             lon: facts.get("lon").and_then(Value::as_f64),
             secret: s("secret").map(str::as_bytes),
             visitor: false,
+            asn: facts.get("asn").and_then(Value::as_u64).map(|n| n as u32),
+            asn_org: s("asn_org").map(String::from),
+            tor_exit: facts.get("tor_exit").and_then(Value::as_bool).unwrap_or(false),
+            ect: s("ect"),
+            rtt: s("rtt"),
+            downlink: s("downlink"),
+            save_data: s("save_data"),
         });
         assert_eq!(serde_json::to_value(&out).unwrap(), f["out"], "{name}");
     }
@@ -89,6 +96,7 @@ fn an_unparseable_referrer_is_external_without_rh() {
         lon: None,
         secret: None,
         visitor: false,
+        ..Default::default()
     });
     let s = serde_json::to_value(&out).unwrap()["s"].clone();
     assert_eq!(s["rk"], "external");
@@ -114,8 +122,28 @@ fn a_headless_brand_in_the_client_hints_is_a_bot_under_a_phone_user_agent() {
         lon: None,
         secret: None,
         visitor: false,
+        ..Default::default()
     });
     let s = &serde_json::to_value(&out).unwrap()["s"];
     assert_eq!(s["bn"], "HeadlessChrome");
     assert_eq!(s["bot"], true);
+}
+
+#[test]
+fn network_kinds_from_the_asn_and_the_tor_list() {
+    assert_eq!(network_kind(Some(16509), false), Some("cloud"), "AWS");
+    assert_eq!(network_kind(Some(9009), false), Some("vpn"), "M247");
+    assert_eq!(network_kind(Some(13335), false), Some("relay"), "Cloudflare");
+    assert_eq!(network_kind(Some(7922), false), None, "Comcast is people");
+    assert_eq!(network_kind(Some(15169), false), None, "Google carries offices too");
+    assert_eq!(network_kind(Some(7922), true), Some("tor"), "a Tor exit whatever its network");
+    assert_eq!(network_kind(None, false), None);
+}
+
+#[test]
+fn network_hints_keep_only_what_chromium_sends() {
+    assert_eq!(network_hints(Some("4g"), Some("50"), Some("10"), None), (Some("4g".into()), Some(50), Some(10.0), None));
+    assert_eq!(network_hints(Some("\"slow-2G\""), Some("2000"), Some("0.05"), Some("on")), (Some("slow-2g".into()), Some(2000), Some(0.05), Some(true)));
+    assert_eq!(network_hints(Some("5g"), Some("-1"), Some("NaN"), Some("off")), (None, None, None, None));
+    assert_eq!(network_hints(Some("4g"), Some("99999"), Some("1e9"), Some("")), (Some("4g".into()), None, None, None));
 }

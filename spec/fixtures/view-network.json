@@ -1,0 +1,8 @@
+{
+  "name": "a view on a known network with Chromium's network hints: the network's number, owner and kind, and the connection, never the address",
+  "facts": { "unix_secs": 1792032000, "ip": "192.0.2.1", "user_agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36", "origin_host": "example.com", "country": "US", "asn": 13335, "asn_org": "Cloudflare, Inc.", "ect": "3g", "rtt": "350", "downlink": "1.45", "save_data": "on" },
+  "in": { "v": 1, "n": "view", "id": "nw1", "p": "/" },
+  "out": { "v": 1, "n": "view", "id": "nw1", "p": "/",
+    "time": "2026-10-15T02:40:00.000Z",
+    "s": { "sv": 1, "at": "2026-10-15T02:40:00Z", "host": "example.com", "bn": "Chrome", "bv": 142, "os": "macOS", "bot": false, "rk": "direct", "cc": "US", "an": 13335, "ao": "Cloudflare, Inc.", "nk": "relay", "ect": "3g", "rtt": 350, "dl": 1.45, "sd": true } }
+}

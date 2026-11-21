@@ -104,6 +104,14 @@ flowchart LR
   dropped, never written. The Docker image bundles DB-IP's City Lite of the month it is built in,
   about 130 MB, so the collector needs about 256 MB of memory. DB-IP's licence asks for "IP Geolocation by DB-IP" with a link to
   https://db-ip.com wherever its places are shown.
+- Networks: with `--asn <file.mmdb>` (or `VISITS_ASN`; DB-IP's IP to ASN Lite, CC BY 4.0, or
+  MaxMind's GeoLite2 ASN, with the geoip feature) each event carries the network the address is on:
+  its number `s.an`, its owner `s.ao` (an ISP, a company, a cloud) and, for clouds, VPN carriers and
+  relays such as iCloud Private Relay, its kind `s.nk`. `--tor <file>` (or `VISITS_TOR`), the Tor
+  Project's bulk exit list, makes a beacon from an exit `nk` tor. The address is looked up and
+  dropped. The Docker image bundles the month's ASN Lite and the exit list as of its build.
+- Connections: a page that sends `Accept-CH: ECT, RTT, Downlink, Save-Data` gets Chromium's network
+  hints on its beacons, written as `s.ect`, `s.rtt`, `s.dl` and `s.sd`. Other browsers send none.
 - Placing addresses for your other services: set `VISITS_PLACE_TOKEN` and `POST /place` with
   `Authorization: Bearer <token>` and one address as the body answers its place as JSON
   (`{"cc":"US","rg":"Illinois","ct":"Chicago"}`), writing nothing (`spec/SPEC.md` section 7).

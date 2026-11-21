@@ -43,6 +43,12 @@ pub struct Serve {
     /// An .mmdb database: a country one for `cc`, a city one for `cc`, `rg` and `ct` (needs the geoip feature).
     #[arg(long, env = "VISITS_GEOIP")]
     pub geoip: Option<PathBuf>,
+    /// An ASN .mmdb database (DB-IP's IP to ASN Lite, MaxMind's GeoLite2 ASN): the network's number `an`, its owner `ao` and its kind `nk` (needs the geoip feature).
+    #[arg(long, env = "VISITS_ASN")]
+    pub asn: Option<PathBuf>,
+    /// A list of Tor exit addresses, one a line (the Tor Project's bulk exit list): a beacon from one is `nk` tor.
+    #[arg(long, env = "VISITS_TOR")]
+    pub tor: Option<PathBuf>,
     /// Proxies in front: the client is that many entries from the right of X-Forwarded-For.
     #[arg(long, env = "VISITS_TRUSTED_PROXIES", default_value_t = 0)]
     pub trusted_proxies: usize,
@@ -121,7 +127,7 @@ pub fn check_paths(path: &str, app_path: &str) -> Result<(), String> {
 mod tests {
     use super::*;
     fn serve(limit: &str) -> Serve {
-        Serve { listen: String::new(), path: "/v".into(), origin: vec![], app: vec![], app_path: "/a".into(), secret_env: String::new(), place_token_env: String::new(), sink: "stdout".into(), geoip: None, trusted_proxies: 0, limit: limit.into(), log_ip: false, ignore_ips: vec![], visitor: false }
+        Serve { listen: String::new(), path: "/v".into(), origin: vec![], app: vec![], app_path: "/a".into(), secret_env: String::new(), place_token_env: String::new(), sink: "stdout".into(), geoip: None, asn: None, tor: None, trusted_proxies: 0, limit: limit.into(), log_ip: false, ignore_ips: vec![], visitor: false }
     }
     #[test]
     fn limit_parts_validates() {

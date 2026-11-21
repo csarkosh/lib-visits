@@ -36,6 +36,10 @@ async fn serve(args: Serve) -> anyhow::Result<()> {
     if !ignore.is_empty() { eprintln!("visits: dropping beacons and marking reports own from {} ignored address range(s)", ignore.len()); }
     if args.visitor { eprintln!("visits: writing the visitor (s.vid) beside the daily visit"); }
     let geoip = load_geoip(args.geoip.as_deref())?;
+    let asn = load_geoip(args.asn.as_deref())?;
+    let tor = match args.tor.as_deref() { Some(p) => visits::app::parse_tor(&std::fs::read_to_string(p)?), None => Default::default() };
+    if asn.is_some() { eprintln!("visits: writing each address's network (s.an, s.ao, s.nk)"); }
+    if !tor.is_empty() { eprintln!("visits: {} Tor exit addresses", tor.len()); }
     let place_token = std::env::var(&args.place_token_env).ok().filter(|t| !t.is_empty());
     if place_token.is_some() { eprintln!("visits: placing addresses for the owner's services on {}", visits::app::PLACE_PATH); }
     let state = Arc::new(AppState {
@@ -47,6 +51,8 @@ async fn serve(args: Serve) -> anyhow::Result<()> {
         trusted_proxies: args.trusted_proxies,
         log_ip: args.log_ip,
         geoip,
+        asn,
+        tor,
         ignore,
         apps,
         app_path: args.app_path.clone(),

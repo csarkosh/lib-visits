@@ -43,6 +43,10 @@ pub struct AppState {
     pub trusted_proxies: usize,
     pub log_ip: bool,
     pub geoip: Option<GeoIp>,
+    /// An ASN database (`--asn`): the network each address is on.
+    pub asn: Option<GeoIp>,
+    /// The Tor exit addresses (`--tor`).
+    pub tor: HashSet<IpAddr>,
     /// Beacons from these ranges are answered 204 and never written; reports and
     /// checks from them are written with `s.own`, the owner's own use.
     pub ignore: Vec<IpNet>,
@@ -143,6 +147,7 @@ async fn beacon(
     };
     let ip_text = ip.map(|i| i.to_string());
     let place = ip.and_then(|i| place_of(&state, i)).unwrap_or_default();
+    let network = ip.and_then(|i| network_of(&state, i)).unwrap_or_default();
     let now_ms = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0);
     let facts = RequestFacts {
         unix_secs: now_ms / 1000,
@@ -160,6 +165,13 @@ async fn beacon(
         lon: place.lon,
         secret: state.secret.as_deref(),
         visitor: state.visitor,
+        asn: network.number,
+        asn_org: network.org,
+        tor_exit: ip.is_some_and(|i| state.tor.contains(&i)),
+        ect: h("ect"),
+        rtt: h("rtt"),
+        downlink: h("downlink"),
+        save_data: h("save-data"),
     };
     let decorated: Vec<_> = events.into_iter().map(|e| decorate(e, &facts)).collect();
     if let Err(err) = state.sink.write(&decorated) { eprintln!("visits: sink failed: {err}"); }
@@ -343,3 +355,26 @@ fn place_of(state: &AppState, ip: IpAddr) -> Option<Place> {
 
 #[cfg(not(feature = "geoip"))]
 fn place_of(_state: &AppState, _ip: IpAddr) -> Option<Place> { None }
+
+/// The network an address is on, from the ASN database: its autonomous system's number and its
+/// owner's name (an ISP, a company, a cloud). The address itself is never written.
+#[derive(Default)]
+pub struct Network {
+    pub number: Option<u32>,
+    pub org: Option<String>,
+}
+
+#[cfg(feature = "geoip")]
+fn network_of(state: &AppState, ip: IpAddr) -> Option<Network> {
+    let reader = state.asn.as_ref()?;
+    let a: maxminddb::geoip2::Asn = reader.lookup(ip).ok()?;
+    Some(Network { number: a.autonomous_system_number, org: a.autonomous_system_organization.and_then(name) })
+}
+
+#[cfg(not(feature = "geoip"))]
+fn network_of(_state: &AppState, _ip: IpAddr) -> Option<Network> { None }
+
+/// The Tor Project's bulk exit list: one address a line; anything else (a comment, a blank) is skipped.
+pub fn parse_tor(text: &str) -> HashSet<IpAddr> {
+    text.lines().filter_map(|l| l.trim().parse().ok()).collect()
+}

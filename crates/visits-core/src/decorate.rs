@@ -1,9 +1,10 @@
-use crate::classify::{browser_of, host_key, is_crawler, os_of, split_referrer};
+use crate::classify::{browser_of, host_key, is_crawler, network_hints, network_kind, os_of, split_referrer};
 use crate::clock::{rfc3339, rfc3339_ms};
 use crate::event::{Decoration, Event};
 use crate::visit::{visit_hash, visitor_hash};
 
 /// What the binary knows about a request and the core must not fetch itself.
+#[derive(Default)]
 pub struct RequestFacts<'a> {
     pub unix_secs: u64,
     /// The time of receipt in milliseconds, which the event's own `ts` is checked against.
@@ -24,6 +25,16 @@ pub struct RequestFacts<'a> {
     pub secret: Option<&'a [u8]>,
     /// Whether to write the visitor beside the visit (`--visitor`).
     pub visitor: bool,
+    /// The address's autonomous system and its owner, from the ASN database (`--asn`).
+    pub asn: Option<u32>,
+    pub asn_org: Option<String>,
+    /// Whether the address is on the Tor exit list (`--tor`).
+    pub tor_exit: bool,
+    /// The network hint headers as sent: `ECT`, `RTT`, `Downlink` and `Save-Data`.
+    pub ect: Option<&'a str>,
+    pub rtt: Option<&'a str>,
+    pub downlink: Option<&'a str>,
+    pub save_data: Option<&'a str>,
 }
 
 pub fn decorate(mut event: Event, facts: &RequestFacts) -> Event {
@@ -50,6 +61,7 @@ pub fn decorate(mut event: Event, facts: &RequestFacts) -> Event {
     };
     // A client clock within five minutes of receipt is believed; beyond that the
     // clock is wrong, and the time of receipt stands in.
+    let (ect, rtt, dl, sd) = network_hints(facts.ect, facts.rtt, facts.downlink, facts.save_data);
     let event_ms = match event.fields.get("ts").and_then(|v| v.as_u64()) {
         Some(ts) if ts.abs_diff(facts.unix_millis) <= 300_000 => ts,
         _ => facts.unix_millis,
@@ -74,6 +86,13 @@ pub fn decorate(mut event: Event, facts: &RequestFacts) -> Event {
         ct: facts.city.clone(),
         la: facts.lat,
         lo: facts.lon,
+        an: facts.asn,
+        ao: facts.asn_org.clone(),
+        nk: network_kind(facts.asn, facts.tor_exit).map(String::from),
+        ect,
+        rtt,
+        dl,
+        sd,
     });
     event
 }
@@ -85,7 +104,7 @@ mod tests {
     #[test]
     fn wildcard_language_gives_no_lg() {
         let event: Event = serde_json::from_str(r#"{"v":1,"n":"view","id":"a","p":"/"}"#).unwrap();
-        let facts = RequestFacts { unix_secs: 0, unix_millis: 0, ip: None, user_agent: None, origin_host: "x.com", accept_language: Some("*"), sec_ch_ua: None, sec_ch_ua_platform: None, country: None, region: None, city: None, lat: None, lon: None, secret: None, visitor: false };
+        let facts = RequestFacts { unix_secs: 0, unix_millis: 0, ip: None, user_agent: None, origin_host: "x.com", accept_language: Some("*"), sec_ch_ua: None, sec_ch_ua_platform: None, country: None, region: None, city: None, lat: None, lon: None, secret: None, visitor: false, ..Default::default() };
         assert_eq!(decorate(event, &facts).s.unwrap().lg, None);
     }
 
@@ -93,12 +112,12 @@ mod tests {
     fn an_overlong_language_gives_no_lg() {
         let event: Event = serde_json::from_str(r#"{"v":1,"n":"view","id":"a","p":"/"}"#).unwrap();
         let long = "a".repeat(300);
-        let facts = RequestFacts { unix_secs: 0, unix_millis: 0, ip: None, user_agent: None, origin_host: "x.com", accept_language: Some(&long), sec_ch_ua: None, sec_ch_ua_platform: None, country: None, region: None, city: None, lat: None, lon: None, secret: None, visitor: false };
+        let facts = RequestFacts { unix_secs: 0, unix_millis: 0, ip: None, user_agent: None, origin_host: "x.com", accept_language: Some(&long), sec_ch_ua: None, sec_ch_ua_platform: None, country: None, region: None, city: None, lat: None, lon: None, secret: None, visitor: false, ..Default::default() };
         assert_eq!(decorate(event, &facts).s.unwrap().lg, None);
     }
 
     fn at(unix_millis: u64) -> RequestFacts<'static> {
-        RequestFacts { unix_secs: unix_millis / 1000, unix_millis, ip: None, user_agent: None, origin_host: "x.com", accept_language: None, sec_ch_ua: None, sec_ch_ua_platform: None, country: None, region: None, city: None, lat: None, lon: None, secret: None, visitor: false }
+        RequestFacts { unix_secs: unix_millis / 1000, unix_millis, ip: None, user_agent: None, origin_host: "x.com", accept_language: None, sec_ch_ua: None, sec_ch_ua_platform: None, country: None, region: None, city: None, lat: None, lon: None, secret: None, visitor: false, ..Default::default() }
     }
 
     #[test]
@@ -114,7 +133,7 @@ mod tests {
     #[test]
     fn the_visitor_is_written_only_when_asked_and_known() {
         let view = || serde_json::from_str::<Event>(r#"{"v":1,"n":"view","id":"a","p":"/"}"#).unwrap();
-        let facts = |visitor: bool, ip: Option<&'static str>| RequestFacts { unix_secs: 1_792_032_030, unix_millis: 1_792_032_030_000, ip, user_agent: Some("UA"), origin_host: "x.com", accept_language: None, sec_ch_ua: None, sec_ch_ua_platform: None, country: None, region: None, city: None, lat: None, lon: None, secret: Some(b"test-secret"), visitor };
+        let facts = |visitor: bool, ip: Option<&'static str>| RequestFacts { unix_secs: 1_792_032_030, unix_millis: 1_792_032_030_000, ip, user_agent: Some("UA"), origin_host: "x.com", accept_language: None, sec_ch_ua: None, sec_ch_ua_platform: None, country: None, region: None, city: None, lat: None, lon: None, secret: Some(b"test-secret"), visitor, ..Default::default() };
         let off = decorate(view(), &facts(false, Some("203.0.113.9"))).s.unwrap();
         assert!(off.visit.is_some() && off.vid.is_none(), "off by default");
         let on = decorate(view(), &facts(true, Some("203.0.113.9"))).s.unwrap();

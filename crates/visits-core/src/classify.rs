@@ -85,6 +85,70 @@ pub fn split_referrer(r: &str) -> Option<(String, String)> {
     Some((host_key(host), path.to_string()))
 }
 
+/// Networks that are clouds and hosting providers: a browser there is almost always automated.
+/// Only providers that run no consumer access network, so their own staff do not land here
+/// (Google's 15169 and Microsoft's 8075 carry offices as well as clouds, and are left out).
+const CLOUD_ASNS: &[u32] = &[
+    16509, 14618, // Amazon AWS
+    396982, // Google Cloud
+    14061, // DigitalOcean
+    24940, 213230, // Hetzner
+    16276, // OVH
+    63949, // Linode (Akamai Connected Cloud)
+    20473, // Vultr (Choopa)
+    31898, // Oracle Cloud
+    45102, // Alibaba Cloud
+    132203, // Tencent Cloud
+    51167, // Contabo
+    12876, // Scaleway
+    36352, // ColoCrossing
+    197540, // netcup
+    26496, // GoDaddy
+    54290, // Hostwinds
+    8100, // QuadraNet
+    60781, 28753, // Leaseweb
+];
+
+/// Networks that mostly carry commercial VPNs: a person, but one whose place is the VPN's.
+const VPN_ASNS: &[u32] = &[
+    9009, // M247
+    60068, 212238, // Datacamp (CDN77)
+    136787, // TEFINCOM (NordVPN)
+    147049, // PacketHub
+];
+
+/// Networks that relay people's own browsing: iCloud Private Relay's egress (Akamai, Cloudflare,
+/// Fastly) and Cloudflare WARP. A person, placed near where they are.
+const RELAY_ASNS: &[u32] = &[
+    13335, // Cloudflare
+    36183, 20940, 16625, // Akamai
+    54113, // Fastly
+];
+
+/// What kind of network an address is on, from its ASN and the Tor exit list: `tor`, `cloud`,
+/// `vpn` or `relay`, or none for every other network (an ISP, a company, a university).
+pub fn network_kind(asn: Option<u32>, tor_exit: bool) -> Option<&'static str> {
+    if tor_exit { return Some("tor"); }
+    let asn = asn?;
+    if CLOUD_ASNS.contains(&asn) { Some("cloud") }
+    else if VPN_ASNS.contains(&asn) { Some("vpn") }
+    else if RELAY_ASNS.contains(&asn) { Some("relay") }
+    else { None }
+}
+
+/// Chromium's network hints, read from the request headers a page asked for with `Accept-CH`:
+/// the effective connection type (`ECT`: slow-2g, 2g, 3g or 4g), the round trip in ms (`RTT`,
+/// rounded by the browser to 25 ms), the downlink in Mbit/s (`Downlink`, rounded to 25 kbit/s)
+/// and Save-Data. Anything else is dropped.
+pub fn network_hints(ect: Option<&str>, rtt: Option<&str>, downlink: Option<&str>, save_data: Option<&str>) -> (Option<String>, Option<u32>, Option<f64>, Option<bool>) {
+    let ect = ect.map(|v| v.trim().trim_matches('"').to_ascii_lowercase()).filter(|v| ["slow-2g", "2g", "3g", "4g"].contains(&v.as_str()));
+    let rtt = rtt.and_then(|v| v.trim().parse::<u32>().ok()).filter(|v| *v <= 10_000);
+    let dl = downlink.and_then(|v| v.trim().parse::<f64>().ok()).filter(|v| v.is_finite() && (0.0..=10_000.0).contains(v)).map(|v| (v * 1000.0).round() / 1000.0);
+    let sd = save_data.map(|v| v.trim().eq_ignore_ascii_case("on")).filter(|on| *on);
+    (ect, rtt, dl, sd)
+}
+
+
 #[cfg(test)]
 mod tests {
     use super::*;
