@@ -156,6 +156,8 @@ async fn beacon(
         country: place.country,
         region: place.region,
         city: place.city,
+        lat: place.lat,
+        lon: place.lon,
         secret: state.secret.as_deref(),
         visitor: state.visitor,
     };
@@ -291,6 +293,8 @@ async fn place(State(state): State<Arc<AppState>>, method: Method, headers: Head
     if let Some(v) = p.country { out.insert("cc".into(), v.into()); }
     if let Some(v) = p.region { out.insert("rg".into(), v.into()); }
     if let Some(v) = p.city { out.insert("ct".into(), v.into()); }
+    if let Some(v) = p.lat { out.insert("la".into(), v.into()); }
+    if let Some(v) = p.lon { out.insert("lo".into(), v.into()); }
     ([(header::CONTENT_TYPE, "application/json"), (header::CACHE_CONTROL, "no-store")], serde_json::Value::Object(out).to_string()).into_response()
 }
 
@@ -307,6 +311,9 @@ pub struct Place {
     pub country: Option<String>,
     pub region: Option<String>,
     pub city: Option<String>,
+    /// The city's coordinates in the database, rounded to one decimal of a degree (about 10 km).
+    pub lat: Option<f64>,
+    pub lon: Option<f64>,
 }
 
 /// A place name as written: trimmed, and at most 64 characters, so a database's oddity cannot bloat a row.
@@ -315,6 +322,10 @@ fn name(s: &str) -> Option<String> {
     let t = s.trim();
     (!t.is_empty()).then(|| t.chars().take(64).collect())
 }
+
+/// A degree rounded to one decimal, about 10 km: the city's place, no finer.
+#[cfg(feature = "geoip")]
+fn tenth(d: f64) -> f64 { (d * 10.0).round() / 10.0 }
 
 #[cfg(feature = "geoip")]
 fn place_of(state: &AppState, ip: IpAddr) -> Option<Place> {
@@ -325,6 +336,8 @@ fn place_of(state: &AppState, ip: IpAddr) -> Option<Place> {
         country: c.country.and_then(|c| c.iso_code).map(String::from),
         region: c.subdivisions.and_then(|s| s.into_iter().next()).and_then(|s| en(s.names)),
         city: c.city.and_then(|c| en(c.names)),
+        lat: c.location.as_ref().and_then(|l| l.latitude).map(tenth),
+        lon: c.location.as_ref().and_then(|l| l.longitude).map(tenth),
     })
 }
 

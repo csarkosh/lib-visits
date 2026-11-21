@@ -18,6 +18,9 @@ pub struct RequestFacts<'a> {
     /// The region (state, province) and city the GeoIP database places the address in, in English.
     pub region: Option<String>,
     pub city: Option<String>,
+    /// The city's own coordinates in the database, in degrees rounded to one decimal (about 10 km): where the city is, not the visitor.
+    pub lat: Option<f64>,
+    pub lon: Option<f64>,
     pub secret: Option<&'a [u8]>,
     /// Whether to write the visitor beside the visit (`--visitor`).
     pub visitor: bool,
@@ -69,6 +72,8 @@ pub fn decorate(mut event: Event, facts: &RequestFacts) -> Event {
         cc: facts.country.clone(),
         rg: facts.region.clone(),
         ct: facts.city.clone(),
+        la: facts.lat,
+        lo: facts.lon,
     });
     event
 }
@@ -80,7 +85,7 @@ mod tests {
     #[test]
     fn wildcard_language_gives_no_lg() {
         let event: Event = serde_json::from_str(r#"{"v":1,"n":"view","id":"a","p":"/"}"#).unwrap();
-        let facts = RequestFacts { unix_secs: 0, unix_millis: 0, ip: None, user_agent: None, origin_host: "x.com", accept_language: Some("*"), sec_ch_ua: None, sec_ch_ua_platform: None, country: None, region: None, city: None, secret: None, visitor: false };
+        let facts = RequestFacts { unix_secs: 0, unix_millis: 0, ip: None, user_agent: None, origin_host: "x.com", accept_language: Some("*"), sec_ch_ua: None, sec_ch_ua_platform: None, country: None, region: None, city: None, lat: None, lon: None, secret: None, visitor: false };
         assert_eq!(decorate(event, &facts).s.unwrap().lg, None);
     }
 
@@ -88,12 +93,12 @@ mod tests {
     fn an_overlong_language_gives_no_lg() {
         let event: Event = serde_json::from_str(r#"{"v":1,"n":"view","id":"a","p":"/"}"#).unwrap();
         let long = "a".repeat(300);
-        let facts = RequestFacts { unix_secs: 0, unix_millis: 0, ip: None, user_agent: None, origin_host: "x.com", accept_language: Some(&long), sec_ch_ua: None, sec_ch_ua_platform: None, country: None, region: None, city: None, secret: None, visitor: false };
+        let facts = RequestFacts { unix_secs: 0, unix_millis: 0, ip: None, user_agent: None, origin_host: "x.com", accept_language: Some(&long), sec_ch_ua: None, sec_ch_ua_platform: None, country: None, region: None, city: None, lat: None, lon: None, secret: None, visitor: false };
         assert_eq!(decorate(event, &facts).s.unwrap().lg, None);
     }
 
     fn at(unix_millis: u64) -> RequestFacts<'static> {
-        RequestFacts { unix_secs: unix_millis / 1000, unix_millis, ip: None, user_agent: None, origin_host: "x.com", accept_language: None, sec_ch_ua: None, sec_ch_ua_platform: None, country: None, region: None, city: None, secret: None, visitor: false }
+        RequestFacts { unix_secs: unix_millis / 1000, unix_millis, ip: None, user_agent: None, origin_host: "x.com", accept_language: None, sec_ch_ua: None, sec_ch_ua_platform: None, country: None, region: None, city: None, lat: None, lon: None, secret: None, visitor: false }
     }
 
     #[test]
@@ -109,7 +114,7 @@ mod tests {
     #[test]
     fn the_visitor_is_written_only_when_asked_and_known() {
         let view = || serde_json::from_str::<Event>(r#"{"v":1,"n":"view","id":"a","p":"/"}"#).unwrap();
-        let facts = |visitor: bool, ip: Option<&'static str>| RequestFacts { unix_secs: 1_792_032_030, unix_millis: 1_792_032_030_000, ip, user_agent: Some("UA"), origin_host: "x.com", accept_language: None, sec_ch_ua: None, sec_ch_ua_platform: None, country: None, region: None, city: None, secret: Some(b"test-secret"), visitor };
+        let facts = |visitor: bool, ip: Option<&'static str>| RequestFacts { unix_secs: 1_792_032_030, unix_millis: 1_792_032_030_000, ip, user_agent: Some("UA"), origin_host: "x.com", accept_language: None, sec_ch_ua: None, sec_ch_ua_platform: None, country: None, region: None, city: None, lat: None, lon: None, secret: Some(b"test-secret"), visitor };
         let off = decorate(view(), &facts(false, Some("203.0.113.9"))).s.unwrap();
         assert!(off.visit.is_some() && off.vid.is_none(), "off by default");
         let on = decorate(view(), &facts(true, Some("203.0.113.9"))).s.unwrap();

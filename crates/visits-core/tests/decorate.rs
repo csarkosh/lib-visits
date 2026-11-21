@@ -26,6 +26,8 @@ fn every_fixture_decorates_to_its_out() {
             country: s("country").map(String::from),
             region: s("region").map(String::from),
             city: s("city").map(String::from),
+            lat: facts.get("lat").and_then(Value::as_f64),
+            lon: facts.get("lon").and_then(Value::as_f64),
             secret: s("secret").map(str::as_bytes),
             visitor: false,
         });
@@ -83,6 +85,8 @@ fn an_unparseable_referrer_is_external_without_rh() {
         country: None,
         region: None,
         city: None,
+        lat: None,
+        lon: None,
         secret: None,
         visitor: false,
     });
@@ -106,6 +110,8 @@ fn a_headless_brand_in_the_client_hints_is_a_bot_under_a_phone_user_agent() {
         country: None,
         region: None,
         city: None,
+        lat: None,
+        lon: None,
         secret: None,
         visitor: false,
     });

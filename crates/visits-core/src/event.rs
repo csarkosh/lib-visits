@@ -49,4 +49,8 @@ pub struct Decoration {
     pub rg: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ct: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub la: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lo: Option<f64>,
 }

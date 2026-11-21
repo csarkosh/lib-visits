@@ -68,6 +68,7 @@ Added by the collector beside the client's keys, never over them.
 | `cc` | ISO 3166-1 alpha-2 country, when a GeoIP database is configured |
 | `rg` | the region (state, province, county) the GeoIP database places the address in, its English name, at most 64 characters; only with a city database |
 | `ct` | the city, likewise; only with a city database |
+| `la` `lo` | the city's own latitude and longitude in the database, degrees rounded to one decimal (about 10 km), where the city is and not where the visitor is; only with a city database that has them |
 
 Browser from `Sec-CH-UA` when present: the brand that is neither `Chromium` nor
 starts with `Not`, else `Chromium`; its `v`; a hint brand over 32 characters is ignored and the User-Agent decides. `Google Chrome` is reported as `Chrome` and `Microsoft Edge` as `Edge`, so the name is the same with or without hints. Else from the User-Agent, first
@@ -247,7 +248,7 @@ request carries `Authorization: Bearer <token>` and a body that is one address a
 
 | Answer | When |
 |---|---|
-| `200` `application/json` | `{"cc": …, "rg": …, "ct": …}` as section 3 defines them, each key absent when the database does not know it; `{}` without a database |
+| `200` `application/json` | `{"cc": …, "rg": …, "ct": …, "la": …, "lo": …}` as section 3 defines them, each key absent when the database does not know it; `{}` without a database |
 | `400` | the body is not one address |
 | `401` | the token is missing or wrong (compared in constant time) |
 | `405` | any method but `POST` |
