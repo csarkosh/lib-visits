@@ -58,6 +58,8 @@
   .main { font-size: 15px; font-weight: 600; letter-spacing: -0.01em; line-height: 1.3; }
   .path { font-family: var(--mono); font-size: 13px; font-weight: 500; }
   .small { font-size: 12px; color: var(--muted); line-height: 1.35; }
+  /* Wrappers for the vertical layout; the wide one lays their children out as the node's own. */
+  .line, .gauge { display: contents; }
   .time { margin-top: auto; padding-top: 8px; font-family: var(--mono); font-size: 20px; font-weight: 600; letter-spacing: -0.02em; }
   .time small { font-size: 11px; font-weight: 400; color: var(--faint); letter-spacing: 0; margin-left: 4px; }
   .time.at { font-size: 13px; font-weight: 500; color: var(--muted); }
@@ -72,21 +74,28 @@
   .total { margin: 14px 0 0; padding-top: 12px; border-top: 1px solid var(--border); font-size: 13px; color: var(--muted); }
   .total b { color: var(--text); font-weight: 600; }
 
-  /* The vertical layout, a card's thumbnail: one step a row, the time at the row's right, the
-     arrows pointing down. The lead and the time strip go (they repeat what the steps say), and the
-     shadow is tighter so the window fills more of a small frame. */
+  /* The vertical layout, a card's thumbnail: one step a row with its time at the right, the
+     steps close together, each page's title beside its path and its depth beside the bar. The
+     lead, the arrows and the time strip go (they repeat what the steps say), and the shadow is
+     tighter so the window fills more of a small frame. */
   :root.vertical { --shadow: 0 10px 22px rgba(0, 0, 0, 0.16), 0 3px 8px rgba(0, 0, 0, 0.08); }
   :root.vertical[data-theme="dark"] { --shadow: 0 10px 22px rgba(0, 0, 0, 0.5), 0 3px 8px rgba(0, 0, 0, 0.3); }
   :root.vertical body { width: 440px; padding: 22px 26px 36px; }
-  :root.vertical h2 { margin-bottom: 14px; }
-  :root.vertical .sub, :root.vertical .strip, :root.vertical .axis { display: none; }
-  :root.vertical .flow { flex-direction: column; }
-  :root.vertical .node { flex: none; position: relative; padding: 11px 13px; }
-  :root.vertical .node .time { position: absolute; right: 13px; top: 11px; padding-top: 0; }
-  :root.vertical .arrow { flex: 0 0 22px; }
-  :root.vertical .arrow svg { transform: rotate(90deg); }
-  :root.vertical .legend { display: none; }
-  :root.vertical .total { margin-top: 16px; }
+  :root.vertical .content { padding: 18px 20px 16px; }
+  :root.vertical h2 { margin-bottom: 12px; }
+  :root.vertical .sub, :root.vertical .strip, :root.vertical .axis, :root.vertical .legend, :root.vertical .arrow { display: none; }
+  :root.vertical .flow { flex-direction: column; gap: 8px; }
+  :root.vertical .node { flex: none; position: relative; padding: 9px 12px 10px; gap: 2px; border-radius: 10px; }
+  :root.vertical .node .time { position: absolute; right: 12px; top: 9px; padding-top: 0; font-size: 17px; }
+  :root.vertical .node .time.at { font-size: 12px; top: 10px; }
+  :root.vertical .line { display: flex; flex-direction: row; align-items: baseline; gap: 8px; min-width: 0; }
+  :root.vertical .line .main { white-space: nowrap; }
+  :root.vertical .line .small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  :root.vertical .gauge { display: flex; flex-direction: row; align-items: center; gap: 8px; margin-top: 5px; }
+  :root.vertical .gauge .depth { flex: 1 1 auto; margin-top: 0; }
+  :root.vertical .gauge .small { flex: none; margin: 0 !important; font-size: 11px; }
+  :root.vertical .gauge .badge { flex: none; margin: 0; }
+  :root.vertical .total { margin-top: 12px; padding-top: 10px; font-size: 12px; }
 </style>
 </head>
 <body>
@@ -123,16 +132,16 @@ const fmt = (s) => (s >= 60 ? `${Math.floor(s / 60)}m ${String(s % 60).padStart(
 const clock = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 const arrow = '<div class="arrow"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8h11M9 4l4 4-4 4"/></svg></div>';
 document.getElementById('title').textContent = VISIT.window;
-let html = `<div class="node edge"><span class="kicker">Arrived from</span><span class="main">${esc(VISIT.from.name)}</span><span class="small">${esc(VISIT.from.detail)}</span><span class="time at">at 0:00</span></div>`;
+let html = `<div class="node edge"><span class="kicker">Arrived from</span><div class="line"><span class="main">${esc(VISIT.from.name)}</span><span class="small">${esc(VISIT.from.detail)}</span></div><span class="time at">at 0:00</span></div>`;
 let at = 0;
 VISIT.pages.forEach((p, i) => {
-  html += `${arrow}<div class="node"><span class="kicker">Page ${i + 1} · at ${clock(at)}</span><span class="main path">${esc(p.path)}</span><span class="small">${esc(p.title)}</span>`
-    + `<div class="depth"><span style="width:${p.depth}%"></span></div>`
+  html += `${arrow}<div class="node"><span class="kicker">Page ${i + 1} · at ${clock(at)}</span><div class="line"><span class="main path">${esc(p.path)}</span><span class="small">${esc(p.title)}</span></div>`
+    + `<div class="gauge"><div class="depth"><span style="width:${p.depth}%"></span></div>`
     + (p.read ? '<span class="badge">read to the end</span>' : `<span class="small" style="margin-top:4px">scrolled ${p.depth}%</span>`)
-    + `<span class="time">${fmt(p.secs)}<small>engaged</small></span></div>`;
+    + `</div><span class="time">${fmt(p.secs)}<small>engaged</small></span></div>`;
   at += p.secs;
 });
-html += `${arrow}<div class="node edge"><span class="kicker">Left</span><span class="main">${esc(VISIT.left.name)}</span><span class="small">${esc(VISIT.left.detail)}</span><span class="time at">at ${clock(at)}</span></div>`;
+html += `${arrow}<div class="node edge"><span class="kicker">Left</span><div class="line"><span class="main">${esc(VISIT.left.name)}</span><span class="small">${esc(VISIT.left.detail)}</span></div><span class="time at">at ${clock(at)}</span></div>`;
 document.getElementById('flow').innerHTML = html;
 const colors = ['var(--ord-3)', 'var(--ord-4)', 'var(--ord-1)'];
 document.getElementById('strip').innerHTML = VISIT.pages.map((p, i) => `<span style="flex:${p.secs} 1 0;background:${colors[i % colors.length]}"></span>`).join('');
