@@ -37,7 +37,7 @@ pub struct Serve {
     /// stdout, or file:<path>.
     #[arg(long, env = "VISITS_SINK", default_value = "stdout")]
     pub sink: String,
-    /// An .mmdb database for countries (needs the geoip feature).
+    /// An .mmdb database: a country one for `cc`, a city one for `cc`, `rg` and `ct` (needs the geoip feature).
     #[arg(long, env = "VISITS_GEOIP")]
     pub geoip: Option<PathBuf>,
     /// Proxies in front: the client is that many entries from the right of X-Forwarded-For.

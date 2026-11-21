@@ -1,0 +1,8 @@
+{
+  "name": "a view placed by a city database: the country, the region and the city, never the address",
+  "facts": { "unix_secs": 1792032000, "ip": "192.0.2.1", "user_agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36", "origin_host": "example.com", "country": "US", "region": "Washington", "city": "Port Angeles" },
+  "in": { "v": 1, "n": "view", "id": "cc1", "p": "/dayhike/" },
+  "out": { "v": 1, "n": "view", "id": "cc1", "p": "/dayhike/",
+    "time": "2026-10-15T02:40:00.000Z",
+    "s": { "sv": 1, "at": "2026-10-15T02:40:00Z", "host": "example.com", "bn": "Chrome", "bv": 142, "os": "macOS", "bot": false, "rk": "direct", "cc": "US", "rg": "Washington", "ct": "Port Angeles" } }
+}

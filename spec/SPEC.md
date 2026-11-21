@@ -66,6 +66,8 @@ Added by the collector beside the client's keys, never over them.
 | `rh` | external only: the referrer's host, leading `www.` removed; absent when the referrer has no parseable `scheme://host` |
 | `lg` | first tag of `Accept-Language`, only when the event has no `lg` and the tag is 1 to 35 characters of letters, digits and hyphens |
 | `cc` | ISO 3166-1 alpha-2 country, when a GeoIP database is configured |
+| `rg` | the region (state, province, county) the GeoIP database places the address in, its English name, at most 64 characters; only with a city database |
+| `ct` | the city, likewise; only with a city database |
 
 Browser from `Sec-CH-UA` when present: the brand that is neither `Chromium` nor
 starts with `Not`, else `Chromium`; its `v`; a hint brand over 32 characters is ignored and the User-Agent decides. `Google Chrome` is reported as `Chrome` and `Microsoft Edge` as `Edge`, so the name is the same with or without hints. Else from the User-Agent, first

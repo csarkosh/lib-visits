@@ -136,7 +136,7 @@ async fn beacon(
         Err(e) => return refuse(StatusCode::BAD_REQUEST, &e.to_string()),
     };
     let ip_text = ip.map(|i| i.to_string());
-    let country = ip.and_then(|i| country_of(&state, i));
+    let place = ip.and_then(|i| place_of(&state, i)).unwrap_or_default();
     let now_ms = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0);
     let facts = RequestFacts {
         unix_secs: now_ms / 1000,
@@ -147,7 +147,9 @@ async fn beacon(
         accept_language: h("accept-language"),
         sec_ch_ua: h("sec-ch-ua"),
         sec_ch_ua_platform: h("sec-ch-ua-platform"),
-        country,
+        country: place.country,
+        region: place.region,
+        city: place.city,
         secret: state.secret.as_deref(),
         visitor: state.visitor,
     };
@@ -264,12 +266,34 @@ async fn check(
     }
 }
 
+/// Where the GeoIP database places an address: the country's ISO code, and the region and city by
+/// their English names. A country database answers the country alone; a city database (DB-IP's
+/// City Lite, MaxMind's GeoLite2 City) all three. The address itself is never written.
+#[derive(Default)]
+pub struct Place {
+    pub country: Option<String>,
+    pub region: Option<String>,
+    pub city: Option<String>,
+}
+
+/// A place name as written: trimmed, and at most 64 characters, so a database's oddity cannot bloat a row.
 #[cfg(feature = "geoip")]
-fn country_of(state: &AppState, ip: IpAddr) -> Option<String> {
+fn name(s: &str) -> Option<String> {
+    let t = s.trim();
+    (!t.is_empty()).then(|| t.chars().take(64).collect())
+}
+
+#[cfg(feature = "geoip")]
+fn place_of(state: &AppState, ip: IpAddr) -> Option<Place> {
     let reader = state.geoip.as_ref()?;
-    let c: maxminddb::geoip2::Country = reader.lookup(ip).ok()?;
-    c.country.and_then(|c| c.iso_code).map(String::from)
+    let c: maxminddb::geoip2::City = reader.lookup(ip).ok()?;
+    let en = |names: Option<std::collections::BTreeMap<&str, &str>>| names.and_then(|n| n.get("en").copied()).and_then(name);
+    Some(Place {
+        country: c.country.and_then(|c| c.iso_code).map(String::from),
+        region: c.subdivisions.and_then(|s| s.into_iter().next()).and_then(|s| en(s.names)),
+        city: c.city.and_then(|c| en(c.names)),
+    })
 }
 
 #[cfg(not(feature = "geoip"))]
-fn country_of(_state: &AppState, _ip: IpAddr) -> Option<String> { None }
+fn place_of(_state: &AppState, _ip: IpAddr) -> Option<Place> { None }

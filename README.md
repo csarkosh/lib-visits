@@ -98,8 +98,12 @@ flowchart LR
   with `"s": {"own": true}`, so your own use of your program is kept apart, not lost.
 - Event time: each line's `time` is the browser's clock at the event (when within five minutes
   of receipt), so beacons that arrive together after a cold start keep their order.
-- Countries: build with `--features geoip` and pass `--geoip GeoLite2-Country.mmdb`
-  (or DB-IP Lite, CC BY 4.0).
+- Places: build with `--features geoip` and pass `--geoip <file.mmdb>` (or `VISITS_GEOIP`). A
+  country database writes `s.cc`; a city one (DB-IP's IP to City Lite, CC BY 4.0, or MaxMind's
+  GeoLite2 City) writes the region `s.rg` and the city `s.ct` too. The address is looked up and
+  dropped, never written. The Docker image bundles DB-IP's City Lite of the month it is built in,
+  about 130 MB, so the collector needs about 256 MB of memory. DB-IP's licence asks for "IP Geolocation by DB-IP" with a link to
+  https://db-ip.com wherever its places are shown.
 - Web Vitals: add `<script src="/vitals.min.js"></script>` after the core.
 - Behind a proxy: `--trusted-proxies N` (the client is the Nth address from the
   right of `X-Forwarded-For`; only the first `X-Forwarded-For` header line is read); confirm once with `--log-ip`, then turn it off.

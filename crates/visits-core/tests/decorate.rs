@@ -24,6 +24,8 @@ fn every_fixture_decorates_to_its_out() {
             sec_ch_ua: s("sec_ch_ua"),
             sec_ch_ua_platform: s("sec_ch_ua_platform"),
             country: s("country").map(String::from),
+            region: s("region").map(String::from),
+            city: s("city").map(String::from),
             secret: s("secret").map(str::as_bytes),
             visitor: false,
         });
@@ -79,6 +81,8 @@ fn an_unparseable_referrer_is_external_without_rh() {
         sec_ch_ua: None,
         sec_ch_ua_platform: None,
         country: None,
+        region: None,
+        city: None,
         secret: None,
         visitor: false,
     });
@@ -100,6 +104,8 @@ fn a_headless_brand_in_the_client_hints_is_a_bot_under_a_phone_user_agent() {
         sec_ch_ua: Some("\"HeadlessChrome\";v=\"138\", \"Chromium\";v=\"138\", \"Not)A;Brand\";v=\"24\""),
         sec_ch_ua_platform: None,
         country: None,
+        region: None,
+        city: None,
         secret: None,
         visitor: false,
     });
