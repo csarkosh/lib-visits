@@ -236,3 +236,21 @@ the request is written. Key order is not significant.
 `spec/fixtures/app/`: `check.json` (`query`), `session.json` and `crash.json`
 (valid report bodies), `invalid.json` (`reason`, `status`, and a `report` body
 or a `check` query; each report is sent as an `arkos/0.5.0` agent).
+
+## 7. The place route
+
+`POST /place`, mounted only when the collector has a place token (`--place-token-env`, by default
+the variable `VISITS_PLACE_TOKEN`; unset or empty, no route). It is for the owner's other
+services, which hold a client's address and want its place without a database of their own: the
+request carries `Authorization: Bearer <token>` and a body that is one address as text
+(`203.0.113.9`, `2001:db8::1`, at most 64 bytes, surrounding whitespace ignored).
+
+| Answer | When |
+|---|---|
+| `200` `application/json` | `{"cc": …, "rg": …, "ct": …}` as section 3 defines them, each key absent when the database does not know it; `{}` without a database |
+| `400` | the body is not one address |
+| `401` | the token is missing or wrong (compared in constant time) |
+| `405` | any method but `POST` |
+
+Nothing is written, the address is not kept, and the route is not rate-limited: the token is
+its gate.

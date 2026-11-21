@@ -56,6 +56,7 @@ async fn launch(
         apps,
         app_path: "/a".into(),
         visitor,
+        place_token: Some("place-secret".into()),
     });
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap().to_string();
@@ -452,4 +453,23 @@ async fn each_route_is_mounted_only_when_configured() {
     let apps = start_apps(programs(), Limiter::new(1000.0, 0.0)).await;
     assert_eq!(request(&apps.addr, "POST", "/v", &[("Origin", "https://example.com")], VIEW).0, 404, "no origins, no beacon route");
     assert_eq!(request(&apps.addr, "GET", "/healthcheck", &[], "").0, 200);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn the_place_route_answers_its_token_only_and_writes_nothing() {
+    let srv = start(Some("s"), 1).await;
+    let (status, _, _) = request(&srv.addr, "POST", "/place", &[], "203.0.113.9");
+    assert_eq!(status, 401, "no token");
+    let (status, _, _) = request(&srv.addr, "POST", "/place", &[("Authorization", "Bearer place-secreT")], "203.0.113.9");
+    assert_eq!(status, 401, "a wrong token");
+    let (status, _, _) = request(&srv.addr, "POST", "/place", &[("Authorization", "Bearer place-secret")], "not an address");
+    assert_eq!(status, 400);
+    let (status, head, body) = request(&srv.addr, "POST", "/place", &[("Authorization", "Bearer place-secret")], "203.0.113.9\n");
+    assert_eq!(status, 200);
+    assert!(head.contains("application/json"));
+    // No database in the test: the place is empty, and nothing reaches the sink.
+    assert_eq!(body.trim(), "{}");
+    let (status, _, _) = request(&srv.addr, "GET", "/place", &[("Authorization", "Bearer place-secret")], "");
+    assert_eq!(status, 405);
+    assert!(srv.captured.events.lock().unwrap().is_empty());
 }

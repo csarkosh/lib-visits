@@ -34,6 +34,9 @@ pub struct Serve {
     /// The environment variable holding the hash secret.
     #[arg(long, default_value = "VISITS_SECRET")]
     pub secret_env: String,
+    /// The environment variable holding the place route's bearer token; unset or empty, no place route.
+    #[arg(long, default_value = "VISITS_PLACE_TOKEN")]
+    pub place_token_env: String,
     /// stdout, or file:<path>.
     #[arg(long, env = "VISITS_SINK", default_value = "stdout")]
     pub sink: String,
@@ -118,7 +121,7 @@ pub fn check_paths(path: &str, app_path: &str) -> Result<(), String> {
 mod tests {
     use super::*;
     fn serve(limit: &str) -> Serve {
-        Serve { listen: String::new(), path: "/v".into(), origin: vec![], app: vec![], app_path: "/a".into(), secret_env: String::new(), sink: "stdout".into(), geoip: None, trusted_proxies: 0, limit: limit.into(), log_ip: false, ignore_ips: vec![], visitor: false }
+        Serve { listen: String::new(), path: "/v".into(), origin: vec![], app: vec![], app_path: "/a".into(), secret_env: String::new(), place_token_env: String::new(), sink: "stdout".into(), geoip: None, trusted_proxies: 0, limit: limit.into(), log_ip: false, ignore_ips: vec![], visitor: false }
     }
     #[test]
     fn limit_parts_validates() {

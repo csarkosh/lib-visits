@@ -53,6 +53,9 @@ pub struct AppState {
     pub app_path: String,
     /// Write `s.vid`, the visitor across days, beside the daily visit (`--visitor`).
     pub visitor: bool,
+    /// The bearer token of the place route, `POST /place`, which another service of the
+    /// owner's uses to place an address it holds. None: no place route.
+    pub place_token: Option<String>,
 }
 
 /// The beacon route is mounted when there is an origin to allow, the report
@@ -66,6 +69,9 @@ pub fn router(state: Arc<AppState>) -> Router {
         r = r
             .route(&state.app_path, any(report).layer(DefaultBodyLimit::max(MAX_REPORT)))
             .route(&format!("{}/check", state.app_path), any(check));
+    }
+    if state.place_token.is_some() {
+        r = r.route(PLACE_PATH, any(place));
     }
     r.layer(DefaultBodyLimit::max(MAX_BODY))
         .with_state(state)
@@ -264,6 +270,33 @@ async fn check(
         Some(to) => (StatusCode::FOUND, [(header::CACHE_CONTROL, HeaderValue::from_static("no-store")), (header::LOCATION, to)]).into_response(),
         None => no_content(),
     }
+}
+
+/// The place route: another of the owner's services, holding a client's address, asks where it
+/// is. Answers the place as JSON (`{"cc":"US","rg":"Washington","ct":"Seattle"}`, each key absent
+/// when unknown, `{}` without a database), 400 to a body that is not one address, 401 to a wrong
+/// or missing token. Nothing is written and the address is not kept.
+pub const PLACE_PATH: &str = "/place";
+
+async fn place(State(state): State<Arc<AppState>>, method: Method, headers: HeaderMap, body: Bytes) -> Response {
+    if method != Method::POST { return only("POST"); }
+    let Some(want) = state.place_token.as_deref() else { return refuse(StatusCode::NOT_FOUND, "no place route") };
+    let given = headers.get(header::AUTHORIZATION).and_then(|v| v.to_str().ok()).and_then(|v| v.strip_prefix("Bearer ")).unwrap_or("");
+    if !same(given.as_bytes(), want.as_bytes()) { return refuse(StatusCode::UNAUTHORIZED, "wrong token"); }
+    let Some(ip) = std::str::from_utf8(&body).ok().map(str::trim).filter(|t| t.len() <= 64).and_then(|t| t.parse::<IpAddr>().ok()) else {
+        return refuse(StatusCode::BAD_REQUEST, "the body is one address");
+    };
+    let p = place_of(&state, ip).unwrap_or_default();
+    let mut out = serde_json::Map::new();
+    if let Some(v) = p.country { out.insert("cc".into(), v.into()); }
+    if let Some(v) = p.region { out.insert("rg".into(), v.into()); }
+    if let Some(v) = p.city { out.insert("ct".into(), v.into()); }
+    ([(header::CONTENT_TYPE, "application/json"), (header::CACHE_CONTROL, "no-store")], serde_json::Value::Object(out).to_string()).into_response()
+}
+
+/// Two tokens compared in time that depends on their lengths only, not on where they differ.
+fn same(a: &[u8], b: &[u8]) -> bool {
+    a.len() == b.len() && a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
 }
 
 /// Where the GeoIP database places an address: the country's ISO code, and the region and city by
